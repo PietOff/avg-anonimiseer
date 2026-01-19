@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="nl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AVG Anonimiseer - Document Redactie Tool</title>
+    <meta name="description"
+        content="Anonimiseer documenten AVG-proof. Verwijder persoonsgegevens veilig met automatische detectie en echte redactie.">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- PDF.js for rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // Immediately configure PDF.js to work without web workers
+        // This is required for file:// protocol compatibility
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+        }
+    </script>
+    <!-- pdf-lib for manipulation -->
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <!-- mammoth.js for DOCX support -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🔒</span>
+                <h1>AVG Anonimiseer</h1>
+            </div>
+            <p class="tagline">100% lokaal • Geen uploads • Veilige redactie</p>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Upload Zone (shown when no document) -->
+            <div id="upload-zone" class="upload-zone">
+                <div class="upload-content">
+                    <div class="upload-icon">📄</div>
+                    <h2>Sleep een document hierheen</h2>
+                    <p>PDF, Word (.docx), of afbeelding (JPG/PNG)</p>
+                    <input type="file" id="file-input" accept=".pdf,.docx,.doc,.jpg,.jpeg,.png" hidden>
+                    <button class="btn btn-primary" id="browse-btn">Bestand kiezen</button>
+                </div>
+                <div class="privacy-badge">
+                    <span class="badge-icon">🛡️</span>
+                    <span>Uw document verlaat nooit uw computer</span>
+                </div>
+            </div>
+
+            <!-- Editor (shown when document loaded) -->
+            <div id="editor" class="editor hidden">
+                <!-- Toolbar -->
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <button class="btn btn-icon" id="btn-back" title="Nieuw document">
+                            <span>←</span>
+                        </button>
+                        <span class="filename" id="filename">document.pdf</span>
+                    </div>
+                    <div class="toolbar-center">
+                        <div class="tool-group">
+                            <button class="btn btn-tool active" id="tool-select" title="Selecteren">
+                                <span>👆</span> Selecteren
+                            </button>
+                            <button class="btn btn-tool" id="tool-redact" title="Zwartlakken">
+                                <span>█</span> Zwartlakken
+                            </button>
+                        </div>
+                        <button class="btn btn-secondary" id="btn-detect">
+                            <span>🔍</span> Auto-detectie
+                        </button>
+                    </div>
+                    <div class="toolbar-right">
+                        <button class="btn btn-primary" id="btn-export">
+                            <span>💾</span> Exporteer veilige PDF
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Editor Content -->
+                <div class="editor-layout">
+                    <!-- Sidebar -->
+                    <aside class="sidebar">
+                        <div class="sidebar-section">
+                            <h3>Gevonden gegevens</h3>
+                            <div id="detections-list" class="detections-list">
+                                <p class="empty-state">Klik op "Auto-detectie" om te scannen</p>
+                            </div>
+                        </div>
+                        <div class="sidebar-section">
+                            <h3>Redacties</h3>
+                            <div id="redactions-list" class="redactions-list">
+                                <p class="empty-state">Nog geen redacties toegevoegd</p>
+                            </div>
+                        </div>
+                        <div class="sidebar-section">
+                            <h3>Metadata</h3>
+                            <div id="metadata-info" class="metadata-info">
+                                <p class="empty-state">Laad document om te zien</p>
+                            </div>
+                            <button class="btn btn-warning btn-small" id="btn-clear-metadata">
+                                🗑️ Wis alle metadata
+                            </button>
+                        </div>
+                    </aside>
+
+                    <!-- PDF Viewer -->
+                    <div class="pdf-viewer-container">
+                        <div class="pdf-controls">
+                            <button class="btn btn-icon" id="btn-zoom-out">−</button>
+                            <span id="zoom-level">100%</span>
+                            <button class="btn btn-icon" id="btn-zoom-in">+</button>
+                            <span class="separator">|</span>
+                            <button class="btn btn-icon" id="btn-prev-page">◀</button>
+                            <span>Pagina <span id="current-page">1</span> / <span id="total-pages">1</span></span>
+                            <button class="btn btn-icon" id="btn-next-page">▶</button>
+                        </div>
+                        <div class="pdf-viewer" id="pdf-viewer">
+                            <canvas id="pdf-canvas"></canvas>
+                            <div id="redaction-layer" class="redaction-layer"></div>
+                            <div id="text-layer" class="text-layer"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Info Panel -->
+        <section class="info-panel">
+            <h2>Wat wordt gedetecteerd?</h2>
+            <div class="category-grid">
+                <div class="category-card">
+                    <span class="category-icon">👤</span>
+                    <h4>Namen & ID's</h4>
+                    <p>BSN, IBAN, e-mail, telefoonnummers, initialen</p>
+                </div>
+                <div class="category-card">
+                    <span class="category-icon">✍️</span>
+                    <h4>Handtekeningen</h4>
+                    <p>Parafen, handtekeningen <em>(handmatig)</em></p>
+                </div>
+                <div class="category-card">
+                    <span class="category-icon">📍</span>
+                    <h4>Locaties</h4>
+                    <p>Adressen, postcodes, GPS-coördinaten</p>
+                </div>
+                <div class="category-card">
+                    <span class="category-icon">📅</span>
+                    <h4>Data & Tijden</h4>
+                    <p>Geboortedata, specifieke datums</p>
+                </div>
+                <div class="category-card">
+                    <span class="category-icon">🔐</span>
+                    <h4>Metadata</h4>
+                    <p>Auteur, wijzigingsdata, software</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>⚠️ <strong>Let op:</strong> Deze tool helpt, maar controleer altijd handmatig op indirecte
+                identificatoren!</p>
+        </footer>
+    </div>
+
+    <!-- Detection Modal -->
+    <div id="detection-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🔍 Automatische Detectie</h3>
+                <button class="btn btn-icon modal-close" id="modal-close">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="detection-progress" class="detection-progress">
+                    <div class="spinner"></div>
+                    <p>Scannen op persoonsgegevens...</p>
+                </div>
+                <div id="detection-results" class="detection-results hidden">
+                    <!-- Results will be inserted here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-detection">Annuleren</button>
+                <button class="btn btn-primary hidden" id="btn-apply-detections">Redacteer geselecteerde</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="detector.js"></script>
+    <script src="redactor.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
