@@ -826,13 +826,58 @@ const App = {
             stats: { total: 0, categories: 0 }
         };
 
-        // Extract text from each page
+        // Store text item positions for each page
+        this.textItemsPerPage = new Map();
+
+        // Extract text from each page with position information
         for (let i = 1; i <= this.totalPages; i++) {
             const page = await this.pdfDoc.getPage(i);
             const textContent = await page.getTextContent();
-            const text = textContent.items.map(item => item.str).join(' ');
+            const viewport = page.getViewport({ scale: 1 });
 
-            const pageDetections = Detector.detect(text, i);
+            // Store text items with their positions for this page
+            const textItems = textContent.items.map(item => ({
+                str: item.str,
+                // PDF.js transform: [scaleX, skewY, skewX, scaleY, translateX, translateY]
+                x: item.transform[4],
+                y: item.transform[5],
+                width: item.width,
+                height: item.height || Math.abs(item.transform[0]) || 12, // Fallback to font size
+                fontHeight: Math.abs(item.transform[0]) || 12
+            }));
+            this.textItemsPerPage.set(i, textItems);
+
+            // Build combined text with position tracking
+            let combinedText = '';
+            const positionMap = []; // Maps character index to text item
+
+            for (let j = 0; j < textItems.length; j++) {
+                const item = textItems[j];
+                const startPos = combinedText.length;
+                combinedText += item.str;
+                const endPos = combinedText.length;
+
+                // Map each character position to this text item
+                positionMap.push({
+                    startPos,
+                    endPos,
+                    item,
+                    itemIndex: j
+                });
+
+                combinedText += ' '; // Add space between items
+            }
+
+            const pageDetections = Detector.detect(combinedText, i);
+
+            // Enhance detections with position information
+            for (const detection of pageDetections.all) {
+                // Find which text item(s) contain this detection
+                const bounds = this.findTextBounds(detection.value, detection.startIndex, positionMap, textItems, viewport);
+                if (bounds) {
+                    detection.bounds = bounds;
+                }
+            }
 
             // Merge results
             for (const [category, data] of Object.entries(pageDetections.byCategory)) {
@@ -856,6 +901,117 @@ const App = {
 
         // Display results
         this.displayDetectionResults(allDetections);
+    },
+
+    /**
+     * Find the bounding box for detected text based on PDF text items
+     */
+    findTextBounds(searchValue, startIndex, positionMap, textItems, viewport) {
+        // Find text items that contain the detection
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
+        let found = false;
+
+        const searchLower = searchValue.toLowerCase().trim();
+
+        // Skip empty or very short search values
+        if (searchLower.length < 2) {
+            return null;
+        }
+
+        // Strategy 1: Find exact match or significant overlap
+        // Build the full text and track positions
+        let fullText = '';
+        const itemPositions = [];
+
+        for (let i = 0; i < textItems.length; i++) {
+            const item = textItems[i];
+            const startPos = fullText.length;
+            fullText += item.str;
+            const endPos = fullText.length;
+            itemPositions.push({ startPos, endPos, item });
+            fullText += ' ';
+        }
+
+        // Find the search value in the full text
+        const fullTextLower = fullText.toLowerCase();
+        const matchIndex = fullTextLower.indexOf(searchLower);
+
+        if (matchIndex !== -1) {
+            const matchEnd = matchIndex + searchLower.length;
+
+            // Find which text items overlap with this match
+            for (const pos of itemPositions) {
+                // Check if this item overlaps with the match range
+                if (pos.endPos > matchIndex && pos.startPos < matchEnd) {
+                    found = true;
+                    const item = pos.item;
+                    const x = item.x;
+                    const y = item.y;
+                    const width = item.width || (item.str.length * item.fontHeight * 0.6);
+                    const height = item.fontHeight || 12;
+
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x + width);
+                    maxY = Math.max(maxY, y + height);
+                }
+            }
+        }
+
+        // Strategy 2: Direct item match (for items that contain the full value)
+        if (!found) {
+            for (let i = 0; i < textItems.length; i++) {
+                const item = textItems[i];
+                const itemText = item.str.toLowerCase().trim();
+
+                // Only match if the item contains the search value OR 
+                // the search value equals this item exactly
+                if (itemText.length >= 3 && itemText.includes(searchLower)) {
+                    found = true;
+                    const x = item.x;
+                    const y = item.y;
+                    const width = item.width || (item.str.length * item.fontHeight * 0.6);
+                    const height = item.fontHeight || 12;
+
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x + width);
+                    maxY = Math.max(maxY, y + height);
+                }
+            }
+        }
+
+        if (!found || minX === Infinity) {
+            return null;
+        }
+
+        // Sanity check: bounds should not be larger than reasonable
+        const maxWidth = 500; // Max reasonable width for a single redaction
+        const maxHeight = 50; // Max reasonable height
+
+        let width = maxX - minX;
+        let height = maxY - minY;
+
+        if (width > maxWidth || height > maxHeight) {
+            // Bounds are too large, something went wrong
+            // Fall back to estimating from search value length
+            return {
+                x: minX,
+                y: minY,
+                width: Math.min(width, searchValue.length * 8),
+                height: Math.min(height, 16)
+            };
+        }
+
+        // Add some padding
+        const padding = 2;
+        return {
+            x: minX - padding,
+            y: minY - padding,
+            width: width + (padding * 2),
+            height: height + (padding * 2)
+        };
     },
 
     /**
@@ -934,15 +1090,27 @@ const App = {
             const index = parseInt(checkbox.dataset.index);
             const item = this.currentDetections.byCategory[category].items[index];
 
-            // For now, we'll create redactions based on text position
-            // In a full implementation, you'd map text positions to PDF coordinates
-            // Here we create placeholder redactions
-            const bounds = {
-                x: 50,
-                y: 700 - (index * 20),
-                width: item.value.length * 7,
-                height: 15
-            };
+            // Use the actual bounds from text detection if available
+            let bounds;
+            if (item.bounds) {
+                bounds = item.bounds;
+            } else {
+                // Fallback: try to find bounds now if not stored
+                const textItems = this.textItemsPerPage?.get(item.page);
+                if (textItems) {
+                    bounds = this.findTextBoundsFromItems(item.value, textItems);
+                }
+
+                // Ultimate fallback with reasonable defaults
+                if (!bounds) {
+                    bounds = {
+                        x: 50,
+                        y: 750 - (index * 20),
+                        width: Math.max(item.value.length * 8, 50),
+                        height: 16
+                    };
+                }
+            }
 
             Redactor.addRedaction(item.page, bounds, item.type, item.value);
         }
@@ -951,6 +1119,27 @@ const App = {
         this.updateRedactionsList();
         this.updateDetectionsList();
         this.closeModal();
+    },
+
+    /**
+     * Find text bounds from stored text items (fallback method)
+     */
+    findTextBoundsFromItems(searchValue, textItems) {
+        const searchLower = searchValue.toLowerCase();
+
+        for (const item of textItems) {
+            if (item.str.toLowerCase().includes(searchLower) ||
+                searchLower.includes(item.str.toLowerCase().trim())) {
+                const width = item.width || (item.str.length * item.fontHeight * 0.6);
+                return {
+                    x: item.x - 2,
+                    y: item.y - 2,
+                    width: Math.max(width, searchValue.length * 8) + 4,
+                    height: item.fontHeight + 4
+                };
+            }
+        }
+        return null;
     },
 
     /**
