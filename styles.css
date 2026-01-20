@@ -525,10 +525,12 @@ body::before {
 
 .redaction-box {
     position: absolute;
-    background: #000;
+    background: #000000 !important;
+    opacity: 1 !important;
     pointer-events: auto;
     cursor: pointer;
     transition: box-shadow var(--transition-fast);
+    z-index: 10;
 }
 
 .redaction-box:hover {
@@ -536,7 +538,7 @@ body::before {
 }
 
 .redaction-box.preview {
-    background: rgba(239, 68, 68, 0.5);
+    background: rgba(239, 68, 68, 0.7) !important;
     border: 2px dashed var(--accent-danger);
 }
 

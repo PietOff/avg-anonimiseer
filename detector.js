@@ -38,57 +38,38 @@ const Detector = {
             validate: () => true
         },
 
-        // Dutch postal codes
+        // Dutch postal codes (stricter pattern to avoid matching dates like "2024 mei")
         postcode: {
             name: 'Postcode',
             icon: '📍',
-            regex: /\b[1-9][0-9]{3}\s?[A-Za-z]{2}\b/g,
-            validate: () => true
-        },
-
-        // Dates (potential birth dates)
-        date: {
-            name: 'Datum',
-            icon: '📅',
-            regex: /\b(?:0?[1-9]|[12][0-9]|3[01])[-\/.](?:0?[1-9]|1[012])[-\/.](?:19|20)?[0-9]{2}\b/g,
-            validate: () => true
-        },
-
-        // License plates (Dutch)
-        kenteken: {
-            name: 'Kenteken',
-            icon: '🚗',
-            regex: /\b[A-Z0-9]{2,3}[-\s]?[A-Z0-9]{2,3}[-\s]?[A-Z0-9]{1,2}\b/g,
-            validate: (match) => Detector.validateKenteken(match)
-        },
-
-        // IP addresses
-        ip: {
-            name: 'IP-adres',
-            icon: '🌐',
-            regex: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g,
-            validate: () => true
-        },
-
-        // Passport/ID numbers
-        documentnr: {
-            name: 'Document Nr',
-            icon: '📄',
-            regex: /\b[A-Z]{2}[A-Z0-9]{7}\b/g,
-            validate: () => true
-        },
-
-        // Initials/Paraphs (parafen)
-        initialen: {
-            name: 'Initialen/Paraaf',
-            icon: '✍️',
-            regex: /\b[A-Z]\.?[A-Z]\.?(?:[A-Z]\.?)?\b/g,
+            // Requires: 4 digits + space + 2 uppercase letters NOT followed by more letters
+            regex: /\b[1-9][0-9]{3}\s?[A-Z]{2}(?![a-zA-Z])\b/g,
             validate: (match) => {
-                // Filter out common abbreviations
-                const common = ['NL', 'EU', 'VS', 'VK', 'BV', 'NV', 'CV', 'TV', 'PC', 'ID', 'OK', 'OF', 'EN', 'TE', 'IN', 'OP', 'MR', 'DR', 'IR', 'BC', 'MA', 'BA'];
-                const cleaned = match.replace(/\./g, '').toUpperCase();
-                return !common.includes(cleaned) && cleaned.length >= 2 && cleaned.length <= 4;
+                // Additional validation: exclude patterns that look like years
+                const digits = match.replace(/[^0-9]/g, '');
+                const year = parseInt(digits);
+                // If it looks like a year (1900-2100), reject it
+                if (year >= 1900 && year <= 2100) {
+                    return false;
+                }
+                return true;
             }
+        },
+
+        // Street addresses with house numbers (common in soil reports)
+        address: {
+            name: 'Adres',
+            icon: '🏠',
+            regex: /\b[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:straat|laan|weg|plein|singel|gracht|kade|dijk|hof|steeg|pad|dreef)\s+\d+[a-z]?(?:\s*[-\/]\s*\d+)?\b/gi,
+            validate: () => true
+        },
+
+        // Cadastral numbers (kadastrale nummers - common in soil reports)
+        kadastraal: {
+            name: 'Kadastraal nr',
+            icon: '📋',
+            regex: /\b[A-Z]{3}\d{2}\s*[A-Z]\s*\d{4,5}\b/gi,
+            validate: () => true
         }
     },
 
@@ -117,16 +98,7 @@ const Detector = {
         return sum % 11 === 0;
     },
 
-    /**
-     * Validate Dutch license plates (basic check)
-     */
-    validateKenteken(kenteken) {
-        const cleaned = kenteken.replace(/[-\s]/g, '').toUpperCase();
-        // Must have mix of letters and numbers
-        const hasLetters = /[A-Z]/.test(cleaned);
-        const hasNumbers = /[0-9]/.test(cleaned);
-        return hasLetters && hasNumbers && cleaned.length >= 5 && cleaned.length <= 8;
-    },
+
 
     /**
      * Detect all personal data in text
@@ -190,13 +162,13 @@ const Detector = {
             }
         }
 
-        // Detect potential names (with lower confidence)
+        // Detect names (but exclude public officials)
         const potentialNames = this.detectNames(text, pageNumber);
         if (potentialNames.length > 0) {
             results.byCategory['names'] = {
-                name: 'Mogelijke Namen',
+                name: 'Namen',
                 icon: '👤',
-                items: potentialNames.map(n => ({ ...n, selected: false })) // Don't pre-select names
+                items: potentialNames.map(n => ({ ...n, selected: true })) // Pre-select names
             };
             results.all.push(...potentialNames);
             results.stats.categories++;
@@ -208,12 +180,52 @@ const Detector = {
 
     /**
      * Detect potential names in text
+     * Excludes public officials (burgemeester, wethouder, etc.)
      */
     detectNames(text, pageNumber = 1) {
         const names = [];
         const seen = new Set();
 
-        // Find names after known prefixes
+        // Public official titles to EXCLUDE from detection
+        const publicOfficials = [
+            'burgemeester', 'wethouder', 'gemeentesecretaris', 'griffier',
+            'raadslid', 'raadsleden', 'minister', 'staatssecretaris',
+            'commissaris', 'gedeputeerde', 'dijkgraaf', 'heemraad',
+            'ombudsman', 'rechter', 'officier', 'notaris'
+        ];
+
+        // Job titles to exclude (these aren't personal names)
+        const jobTitles = [
+            'projectleider', 'trainee', 'stagiair', 'directeur', 'manager',
+            'medewerker', 'adviseur', 'consultant', 'specialist', 'coordinator',
+            'assistent', 'secretaris', 'voorzitter', 'penningmeester'
+        ];
+
+        // Common words that look like names but aren't
+        const excludeWords = [
+            'ervaring', 'opleiding', 'vaardigheden', 'profiel', 'samenvatting',
+            'nederland', 'amsterdam', 'rotterdam', 'utrecht', 'eindhoven',
+            'januari', 'februari', 'maart', 'april', 'juni', 'juli',
+            'augustus', 'september', 'oktober', 'november', 'december'
+        ];
+
+        // Helper to check if a name should be excluded
+        const shouldExclude = (name) => {
+            const lower = name.toLowerCase();
+            // Check against all exclusion lists
+            for (const title of [...publicOfficials, ...jobTitles, ...excludeWords]) {
+                if (lower.includes(title) || title.includes(lower)) {
+                    return true;
+                }
+            }
+            // Exclude single words that are likely section headers
+            if (!name.includes(' ') && name.length < 15) {
+                return true;
+            }
+            return false;
+        };
+
+        // Strategy 1: Find names after known prefixes (high confidence)
         for (const prefix of this.namePatterns.prefixes) {
             const regex = new RegExp(
                 prefix.replace('.', '\\.') + '\\s+([A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\\s+(?:van|de|der|den|het|ten|ter|te)\\s+)?[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+)',
@@ -223,7 +235,7 @@ const Detector = {
             let match;
             while ((match = regex.exec(text)) !== null) {
                 const fullName = match[1];
-                if (!seen.has(fullName.toLowerCase())) {
+                if (!seen.has(fullName.toLowerCase()) && !shouldExclude(fullName)) {
                     seen.add(fullName.toLowerCase());
                     names.push({
                         type: 'name',
@@ -231,11 +243,48 @@ const Detector = {
                         icon: '👤',
                         value: fullName,
                         page: pageNumber,
-                        startIndex: match.index,
+                        startIndex: match.index + prefix.length + 1,
                         endIndex: match.index + match[0].length,
                         confidence: 'high'
                     });
                 }
+            }
+        }
+
+        // Strategy 2: Find standalone full names (First Last or First van Last)
+        // This catches names at the top of CVs, letters, etc.
+        const fullNameRegex = /\b([A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+)\s+(?:(van|de|der|den|het|ten|ter|te)\s+)?([A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\s+[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+)?)\b/g;
+
+        let match;
+        while ((match = fullNameRegex.exec(text)) !== null) {
+            const firstName = match[1];
+            const tussenvoegsel = match[2] || '';
+            const lastName = match[3];
+            const fullName = tussenvoegsel
+                ? `${firstName} ${tussenvoegsel} ${lastName}`
+                : `${firstName} ${lastName}`;
+
+            if (!seen.has(fullName.toLowerCase()) && !shouldExclude(fullName)) {
+                // Extra check: must look like a real name (not a place or month)
+                const lowerFirst = firstName.toLowerCase();
+                const lowerLast = lastName.toLowerCase();
+
+                // Skip if it looks like a location or common word
+                if (excludeWords.some(w => lowerFirst === w || lowerLast === w)) {
+                    continue;
+                }
+
+                seen.add(fullName.toLowerCase());
+                names.push({
+                    type: 'name',
+                    name: 'Naam',
+                    icon: '👤',
+                    value: fullName,
+                    page: pageNumber,
+                    startIndex: match.index,
+                    endIndex: match.index + match[0].length,
+                    confidence: 'medium'
+                });
             }
         }
 
