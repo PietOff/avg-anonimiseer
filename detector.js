@@ -98,6 +98,127 @@ const Detector = {
         return sum % 11 === 0;
     },
 
+    /**
+     * Field labels that indicate personal data follows
+     * These are common labels in Dutch soil reports (bodemrapporten)
+     */
+    fieldLabels: {
+        // Primary labels - definitely personal data
+        primary: [
+            { label: 'opdrachtgever', name: 'Opdrachtgever', icon: '👤' },
+            { label: 'eigenaar', name: 'Eigenaar', icon: '👤' },
+            { label: 'contactpersoon', name: 'Contactpersoon', icon: '👤' },
+            { label: 't.a.v.', name: 'Ter attentie van', icon: '👤' },
+            { label: 'ter attentie van', name: 'Ter attentie van', icon: '👤' },
+            { label: 'aanvrager', name: 'Aanvrager', icon: '👤' },
+            { label: 'rechthebbende', name: 'Rechthebbende', icon: '👤' },
+        ],
+        // Professional labels - should NOT be redacted
+        professional: [
+            'adviesbureau', 'laboratorium', 'uitvoerder', 'veldwerker',
+            'projectleider', 'rapporteur', 'opsteller', 'gecertificeerd',
+            'beoordelaar', 'monsternemer', 'analist'
+        ]
+    },
+
+    /**
+     * Detect personal data based on field labels
+     * This is the most accurate method for structured documents like soil reports
+     */
+    detectLabeledFields(text, pageNumber = 1) {
+        const detections = [];
+        const seen = new Set();
+
+        for (const fieldDef of this.fieldLabels.primary) {
+            // Create regex to find label followed by content
+            // Match patterns like: "Opdrachtgever: Naam Achternaam" or "Opdrachtgever Naam Achternaam"
+            const labelRegex = new RegExp(
+                fieldDef.label + '[:\\s]+([^\\n]{3,50})',
+                'gi'
+            );
+
+            let match;
+            while ((match = labelRegex.exec(text)) !== null) {
+                const value = match[1].trim();
+
+                // Skip if it looks like a professional party
+                const lowerValue = value.toLowerCase();
+                const isProfessional = this.fieldLabels.professional.some(p =>
+                    lowerValue.includes(p)
+                );
+
+                if (isProfessional) continue;
+
+                // Skip if already seen
+                if (seen.has(value.toLowerCase())) continue;
+                seen.add(value.toLowerCase());
+
+                // Skip very short values or values that look like section headers
+                if (value.length < 3 || /^[0-9\.\s]+$/.test(value)) continue;
+
+                detections.push({
+                    type: 'labeled_field',
+                    name: fieldDef.name,
+                    icon: fieldDef.icon,
+                    value: value,
+                    page: pageNumber,
+                    startIndex: match.index + match[0].indexOf(value),
+                    endIndex: match.index + match[0].length,
+                    confidence: 'high',
+                    selected: true
+                });
+            }
+        }
+
+        return detections;
+    },
+
+    /**
+     * Detect signatures - looks for professional titles followed by names
+     * These patterns typically appear near signatures in Dutch reports
+     */
+    detectSignatures(text, pageNumber = 1) {
+        const signatures = [];
+        const seen = new Set();
+
+        // Professional titles that indicate signatures
+        // Format: title + name (e.g., "ing. J.P. de Vries")
+        const signaturePatterns = [
+            // Match "ing. Name" or "ir. Name" etc.
+            /\b(ing\.|ir\.|drs\.|dr\.|mr\.|prof\.|msc\.?|bsc\.?)\s+([A-Z]\.?\s*)+([a-z]+\s+)?(van\s+|de\s+|der\s+|den\s+|ten\s+)?[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+/gi,
+            // Match full names after "Opgesteld door:" or "Gecontroleerd door:"
+            /(?:opgesteld|gecontroleerd|goedgekeurd|beoordeeld)\s+door[:\s]+([A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\s+(?:van|de|der|den)\s+)?[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+)/gi
+        ];
+
+        for (const pattern of signaturePatterns) {
+            let match;
+            pattern.lastIndex = 0;
+
+            while ((match = pattern.exec(text)) !== null) {
+                const value = match[0].trim();
+
+                if (seen.has(value.toLowerCase())) continue;
+                seen.add(value.toLowerCase());
+
+                // Skip very short matches
+                if (value.length < 5) continue;
+
+                signatures.push({
+                    type: 'signature',
+                    name: 'Handtekening/Naam',
+                    icon: '✍️',
+                    value: value,
+                    page: pageNumber,
+                    startIndex: match.index,
+                    endIndex: match.index + match[0].length,
+                    confidence: 'high',
+                    selected: true
+                });
+            }
+        }
+
+        return signatures;
+    },
 
 
     /**
@@ -162,7 +283,31 @@ const Detector = {
             }
         }
 
-        // Detect names (but exclude public officials)
+        // Detect signatures (professional titles + names near signature areas)
+        const signatures = this.detectSignatures(text, pageNumber);
+        if (signatures.length > 0) {
+            results.byCategory['signatures'] = {
+                name: 'Handtekeningen/Ondertekenaars',
+                icon: '✍️',
+                items: signatures
+            };
+            results.all.push(...signatures);
+            results.stats.categories++;
+        }
+
+        // PRIORITY: Detect labeled fields (most accurate for soil reports)
+        const labeledFields = this.detectLabeledFields(text, pageNumber);
+        if (labeledFields.length > 0) {
+            results.byCategory['labeled_fields'] = {
+                name: 'Geïdentificeerde velden',
+                icon: '🏷️',
+                items: labeledFields
+            };
+            results.all.push(...labeledFields);
+            results.stats.categories++;
+        }
+
+        // Detect names (but exclude public officials) - lower priority
         const potentialNames = this.detectNames(text, pageNumber);
         if (potentialNames.length > 0) {
             results.byCategory['names'] = {
@@ -186,42 +331,128 @@ const Detector = {
         const names = [];
         const seen = new Set();
 
-        // Public official titles to EXCLUDE from detection
+        // Public official titles AND government bodies to EXCLUDE from detection
         const publicOfficials = [
+            // Titles
             'burgemeester', 'wethouder', 'gemeentesecretaris', 'griffier',
             'raadslid', 'raadsleden', 'minister', 'staatssecretaris',
             'commissaris', 'gedeputeerde', 'dijkgraaf', 'heemraad',
             'ombudsman', 'rechter', 'officier', 'notaris'
         ];
 
-        // Job titles to exclude (these aren't personal names)
+        // Government bodies - these are public, not personal data
+        const governmentBodies = [
+            'gemeente', 'provincie', 'waterschap', 'rijkswaterstaat', 'ministerie',
+            'rijksoverheid', 'omgevingsdienst', 'veiligheidsregio', 'ggd',
+            'kadaster', 'rvo', 'rivm', 'bodem+', 'team civiel', 'team civiele',
+            'team', 'afdeling', 'dienst', 'sector', 'bureau'
+        ];
+
+        // CERTIFIED LABS AND ADVIESBUREAUS - These should NOT be anonymized
+        // Based on BRL SIKB 2000/2100/6000 and AS3000 certified parties
+        const certifiedParties = [
+            // Common soil investigation companies
+            'wareco', 'tauw', 'fugro', 'arcadis', 'antea', 'royal haskoning',
+            'sweco', 'witteveen', 'bos', 'grontmij', 'oranjewoud', 'save',
+            'enviso', 'ecopart', 'syncera', 'geofox', 'lexmond', 'kp adviseurs',
+            'aveco de bondt', 'mvao', 'kruse', 'aeres', 'econsultancy',
+            'milieuadviesbureau', 'bodeminzicht', 'grondslag',
+            // Certified labs (AS3000)
+            'eurofins', 'alcontrol', 'synlab', 'sgs', 'al-west', 'omegam',
+            'agrolab', 'grondbank', 'nvwa'
+        ];
+
+        // Job titles/roles to exclude (these aren't personal names)
         const jobTitles = [
             'projectleider', 'trainee', 'stagiair', 'directeur', 'manager',
             'medewerker', 'adviseur', 'consultant', 'specialist', 'coordinator',
-            'assistent', 'secretaris', 'voorzitter', 'penningmeester'
+            'assistent', 'secretaris', 'voorzitter', 'penningmeester',
+            'veldwerker', 'monsternemer', 'analist', 'rapporteur', 'opdrachtgever'
         ];
 
-        // Common words that look like names but aren't
+        // Common words that look like names but aren't - EXTENDED for soil reports
         const excludeWords = [
-            'ervaring', 'opleiding', 'vaardigheden', 'profiel', 'samenvatting',
+            // Document section headers (common false positives)
+            'inhoud', 'bijlage', 'bijlagen', 'tekening', 'figuur', 'tabel',
+            'analysecertificaten', 'analysecertificaat', 'toetsingskader',
+            'conclusies', 'aanbevelingen', 'inleiding', 'samenvatting',
+            'resultaten', 'onderzoeksopzet', 'methode', 'literatuur',
+            'locatietekening', 'boorpunten', 'situatie', 'overzicht',
+            'onderzoeksresultaten', 'lokale', 'achtergrondwaarden',
+            // Soil report terms
+            'bodemonderzoek', 'verkennend', 'nader', 'historisch', 'actualiserend',
+            'bodemkwaliteit', 'grondwater', 'verontreiniging', 'sanering',
+            'milieuhygiënisch', 'asbest', 'herontwikkeling', 'bestemmingsplan',
+            // Cities (common in reports) - EXTENDED
             'nederland', 'amsterdam', 'rotterdam', 'utrecht', 'eindhoven',
-            'januari', 'februari', 'maart', 'april', 'juni', 'juli',
-            'augustus', 'september', 'oktober', 'november', 'december'
+            'leeuwarden', 'groningen', 'arnhem', 'nijmegen', 'tilburg',
+            'den haag', 'haarlem', 'almere', 'breda', 'amersfoort',
+            'reijndersbuurt', 'arendstuin',
+            // Months
+            'januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
+            'augustus', 'september', 'oktober', 'november', 'december',
+            // Education 
+            'bachelor', 'master', 'hbo', 'mbo', 'wo', 'universiteit', 'hogeschool',
+            // Location indicators
+            'arendstuin', 'reijndersbuurt', 'woonwijk', 'bedrijventerrein'
         ];
 
-        // Helper to check if a name should be excluded
-        const shouldExclude = (name) => {
+        // Context words that indicate what follows is a professional party (don't redact)
+        const contextExclusions = {
+            // Education terms
+            education: ['bachelor', 'master', 'hbo', 'mbo', 'wo', 'studie', 'opleiding'],
+            // Professional context - names after these are likely certified parties
+            professional: ['adviesbureau', 'laboratorium', 'lab', 'ingenieursbureau',
+                'milieuadvies', 'uitgevoerd door', 'onderzocht door',
+                'geanalyseerd door', 'bemonsterd door', 'gecertificeerd']
+        };
+
+        // Helper to check if a name should be excluded based on context
+        const shouldExclude = (name, matchIndex, fullText) => {
             const lower = name.toLowerCase();
-            // Check against all exclusion lists
-            for (const title of [...publicOfficials, ...jobTitles, ...excludeWords]) {
+
+            // Check if it's a certified party (lab/adviesbureau) - these should NOT be anonymized
+            for (const party of certifiedParties) {
+                if (lower.includes(party) || party.includes(lower)) {
+                    return true; // Exclude from anonymization = keep visible
+                }
+            }
+
+            // Check against all static exclusion lists (including government bodies)
+            for (const title of [...publicOfficials, ...governmentBodies, ...jobTitles, ...excludeWords]) {
                 if (lower.includes(title) || title.includes(lower)) {
                     return true;
                 }
             }
+
             // Exclude single words that are likely section headers
             if (!name.includes(' ') && name.length < 15) {
                 return true;
             }
+
+            // Context-aware check: look at word(s) before the match
+            if (matchIndex > 0) {
+                // Get 50 chars before the match
+                const beforeText = fullText.substring(Math.max(0, matchIndex - 50), matchIndex).toLowerCase();
+                const words = beforeText.trim().split(/\s+/);
+                const precedingWord = words[words.length - 1] || '';
+
+                // Check if preceding word indicates this is not a name
+                for (const [category, contextWords] of Object.entries(contextExclusions)) {
+                    for (const cw of contextWords) {
+                        if (precedingWord === cw || precedingWord.endsWith(cw)) {
+                            return true;
+                        }
+                    }
+                }
+
+                // If it ends with common company suffixes, exclude
+                if (lower.endsWith(' bv') || lower.endsWith(' nv') ||
+                    lower.endsWith(' b.v.') || lower.endsWith(' n.v.')) {
+                    return true;
+                }
+            }
+
             return false;
         };
 
@@ -235,7 +466,7 @@ const Detector = {
             let match;
             while ((match = regex.exec(text)) !== null) {
                 const fullName = match[1];
-                if (!seen.has(fullName.toLowerCase()) && !shouldExclude(fullName)) {
+                if (!seen.has(fullName.toLowerCase()) && !shouldExclude(fullName, match.index, text)) {
                     seen.add(fullName.toLowerCase());
                     names.push({
                         type: 'name',
@@ -264,7 +495,7 @@ const Detector = {
                 ? `${firstName} ${tussenvoegsel} ${lastName}`
                 : `${firstName} ${lastName}`;
 
-            if (!seen.has(fullName.toLowerCase()) && !shouldExclude(fullName)) {
+            if (!seen.has(fullName.toLowerCase()) && !shouldExclude(fullName, match.index, text)) {
                 // Extra check: must look like a real name (not a place or month)
                 const lowerFirst = firstName.toLowerCase();
                 const lowerLast = lastName.toLowerCase();

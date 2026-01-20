@@ -542,6 +542,88 @@ body::before {
     border: 2px dashed var(--accent-danger);
 }
 
+/* Delete button on redaction boxes */
+.redaction-delete-btn {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent-danger);
+    color: white;
+    border: 2px solid white;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+    z-index: 20;
+}
+
+.redaction-box:hover .redaction-delete-btn {
+    opacity: 1;
+}
+
+.redaction-delete-btn:hover {
+    background: #dc2626;
+    transform: scale(1.1);
+}
+
+/* Resize handles on redaction boxes */
+.redaction-resize-handle {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: var(--accent-primary);
+    border: 2px solid white;
+    border-radius: 2px;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+    z-index: 21;
+}
+
+.redaction-box:hover .redaction-resize-handle {
+    opacity: 1;
+}
+
+.redaction-resize-handle.nw {
+    top: -6px;
+    left: -6px;
+    cursor: nw-resize;
+}
+
+.redaction-resize-handle.ne {
+    top: -6px;
+    right: -6px;
+    cursor: ne-resize;
+}
+
+.redaction-resize-handle.sw {
+    bottom: -6px;
+    left: -6px;
+    cursor: sw-resize;
+}
+
+.redaction-resize-handle.se {
+    bottom: -6px;
+    right: -6px;
+    cursor: se-resize;
+}
+
+/* Move cursor when hovering redaction box body */
+.redaction-box.movable {
+    cursor: move;
+}
+
+.redaction-box.resizing,
+.redaction-box.moving {
+    opacity: 0.8;
+}
+
 .text-layer {
     position: absolute;
     top: 0;

@@ -60,6 +60,7 @@ const App = {
             btnBack: document.getElementById('btn-back'),
             toolSelect: document.getElementById('tool-select'),
             toolRedact: document.getElementById('tool-redact'),
+            toolSignature: document.getElementById('tool-signature'),
             btnDetect: document.getElementById('btn-detect'),
             btnExport: document.getElementById('btn-export'),
             btnClearMetadata: document.getElementById('btn-clear-metadata'),
@@ -126,6 +127,7 @@ const App = {
         this.elements.btnBack.addEventListener('click', () => this.resetToUpload());
         this.elements.toolSelect.addEventListener('click', () => this.setTool('select'));
         this.elements.toolRedact.addEventListener('click', () => this.setTool('redact'));
+        this.elements.toolSignature.addEventListener('click', () => this.setTool('signature'));
         this.elements.btnDetect.addEventListener('click', () => this.openDetectionModal());
         this.elements.btnExport.addEventListener('click', () => this.exportPDF());
         this.elements.btnClearMetadata.addEventListener('click', () => this.clearMetadata());
@@ -145,6 +147,13 @@ const App = {
         this.elements.modalClose.addEventListener('click', () => this.closeModal());
         this.elements.btnCancelDetection.addEventListener('click', () => this.closeModal());
         this.elements.btnApplyDetections.addEventListener('click', () => this.applyDetections());
+
+        // Window resize - re-render redactions to keep them positioned correctly
+        window.addEventListener('resize', () => {
+            if (this.pdfDoc) {
+                this.renderRedactions();
+            }
+        });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => this.handleKeyboard(e));
@@ -562,7 +571,41 @@ const App = {
             box.style.width = canvasBounds.width + 'px';
             box.style.height = canvasBounds.height + 'px';
 
-            // Double-click to remove
+            // Add delete button that shows on hover
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'redaction-delete-btn';
+            deleteBtn.innerHTML = '✕';
+            deleteBtn.title = 'Verwijder redactie';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                Redactor.removeRedaction(redaction.id);
+                this.renderRedactions();
+                this.updateRedactionsList();
+            });
+            box.appendChild(deleteBtn);
+
+            // Add resize handles (corners)
+            const handles = ['nw', 'ne', 'sw', 'se'];
+            handles.forEach(pos => {
+                const handle = document.createElement('div');
+                handle.className = `redaction-resize-handle ${pos}`;
+                handle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    this.startResizing(e, redaction, pos);
+                });
+                box.appendChild(handle);
+            });
+
+            // Make box movable by dragging
+            box.classList.add('movable');
+            box.addEventListener('mousedown', (e) => {
+                if (e.target === box) {
+                    e.stopPropagation();
+                    this.startMoving(e, redaction);
+                }
+            });
+
+            // Also keep double-click to remove as fallback
             box.addEventListener('dblclick', () => {
                 Redactor.removeRedaction(redaction.id);
                 this.renderRedactions();
@@ -574,21 +617,90 @@ const App = {
     },
 
     /**
+     * Start resizing a redaction box
+     */
+    startResizing(e, redaction, handlePos) {
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startBounds = { ...redaction.bounds };
+        const pageHeight = 842;
+
+        const onMouseMove = (e) => {
+            const dx = (e.clientX - startX) / this.scale;
+            const dy = (e.clientY - startY) / this.scale;
+
+            let newBounds = { ...startBounds };
+
+            if (handlePos.includes('e')) newBounds.width = Math.max(10, startBounds.width + dx);
+            if (handlePos.includes('w')) {
+                newBounds.x = startBounds.x + dx;
+                newBounds.width = Math.max(10, startBounds.width - dx);
+            }
+            if (handlePos.includes('s')) newBounds.height = Math.max(10, startBounds.height + dy);
+            if (handlePos.includes('n')) {
+                newBounds.y = startBounds.y - dy;
+                newBounds.height = Math.max(10, startBounds.height + dy);
+            }
+
+            redaction.bounds = newBounds;
+            this.renderRedactions();
+        };
+
+        const onMouseUp = () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            this.updateRedactionsList();
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    },
+
+    /**
+     * Start moving a redaction box
+     */
+    startMoving(e, redaction) {
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startBounds = { ...redaction.bounds };
+
+        const onMouseMove = (e) => {
+            const dx = (e.clientX - startX) / this.scale;
+            const dy = (e.clientY - startY) / this.scale;
+
+            redaction.bounds.x = startBounds.x + dx;
+            redaction.bounds.y = startBounds.y - dy; // PDF coords are inverted
+            this.renderRedactions();
+        };
+
+        const onMouseUp = () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            this.updateRedactionsList();
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    },
+
+    /**
      * Set current tool
      */
     setTool(tool) {
         this.currentTool = tool;
         this.elements.toolSelect.classList.toggle('active', tool === 'select');
         this.elements.toolRedact.classList.toggle('active', tool === 'redact');
+        this.elements.toolSignature.classList.toggle('active', tool === 'signature');
 
-        this.elements.pdfViewer.style.cursor = tool === 'redact' ? 'crosshair' : 'default';
+        // Both redact and signature tools use crosshair cursor
+        this.elements.pdfViewer.style.cursor = (tool === 'redact' || tool === 'signature') ? 'crosshair' : 'default';
     },
 
     /**
-     * Handle mouse down for drawing redactions
+     * Handle mouse down for drawing redactions or signatures
      */
     handleMouseDown(event) {
-        if (this.currentTool !== 'redact') return;
+        if (this.currentTool !== 'redact' && this.currentTool !== 'signature') return;
 
         const rect = this.elements.pdfCanvas.getBoundingClientRect();
         this.isDrawing = true;
@@ -652,7 +764,9 @@ const App = {
                 const pageHeight = 842; // A4 height in points
                 const pdfBounds = Redactor.canvasToPdfCoords(bounds, pageHeight, this.scale);
 
-                Redactor.addRedaction(this.currentPage, pdfBounds, 'manual');
+                // Type is 'signature' if using signature tool, otherwise 'manual'
+                const redactionType = this.currentTool === 'signature' ? 'signature' : 'manual';
+                Redactor.addRedaction(this.currentPage, pdfBounds, redactionType);
                 this.renderRedactions();
                 this.updateRedactionsList();
             }
@@ -947,9 +1061,11 @@ const App = {
                     found = true;
                     const item = pos.item;
                     const x = item.x;
-                    const y = item.y;
-                    const width = item.width || (item.str.length * item.fontHeight * 0.6);
-                    const height = item.fontHeight || 12;
+                    // PDF.js Y is baseline (bottom of text), we need top of text
+                    const fontHeight = item.fontHeight || 12;
+                    const y = item.y - fontHeight; // Adjust Y to top of text
+                    const width = item.width || (item.str.length * fontHeight * 0.6);
+                    const height = fontHeight;
 
                     minX = Math.min(minX, x);
                     minY = Math.min(minY, y);
@@ -970,9 +1086,11 @@ const App = {
                 if (itemText.length >= 3 && itemText.includes(searchLower)) {
                     found = true;
                     const x = item.x;
-                    const y = item.y;
-                    const width = item.width || (item.str.length * item.fontHeight * 0.6);
-                    const height = item.fontHeight || 12;
+                    // PDF.js Y is baseline (bottom of text), we need top of text
+                    const fontHeight = item.fontHeight || 12;
+                    const y = item.y - fontHeight; // Adjust Y to top of text
+                    const width = item.width || (item.str.length * fontHeight * 0.6);
+                    const height = fontHeight;
 
                     minX = Math.min(minX, x);
                     minY = Math.min(minY, y);
