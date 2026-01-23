@@ -14,16 +14,12 @@
     <!-- PDF.js for rendering -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>
-        // Immediately configure PDF.js to work without web workers
-        // This is required for file:// protocol compatibility
         if (typeof pdfjsLib !== 'undefined') {
             pdfjsLib.GlobalWorkerOptions.workerSrc = '';
         }
     </script>
     <!-- pdf-lib for manipulation -->
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-    <!-- mammoth.js for DOCX support -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 </head>
 
 <body>
@@ -39,13 +35,13 @@
 
         <!-- Main Content -->
         <main class="main-content">
-            <!-- Upload Zone (shown when no document) -->
+            <!-- Upload Zone -->
             <div id="upload-zone" class="upload-zone">
                 <div class="upload-content">
                     <div class="upload-icon">📄</div>
                     <h2>Sleep een document hierheen</h2>
-                    <p>PDF, Word (.docx), of afbeelding (JPG/PNG)</p>
-                    <input type="file" id="file-input" accept=".pdf,.docx,.doc,.jpg,.jpeg,.png" hidden>
+                    <p>PDF of afbeelding (JPG/PNG)</p>
+                    <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png" hidden>
                     <button class="btn btn-primary" id="browse-btn">Bestand kiezen</button>
                 </div>
                 <div class="privacy-badge">
@@ -54,7 +50,7 @@
                 </div>
             </div>
 
-            <!-- Editor (shown when document loaded) -->
+            <!-- Editor -->
             <div id="editor" class="editor hidden">
                 <!-- Toolbar -->
                 <div class="toolbar">
@@ -71,9 +67,6 @@
                             </button>
                             <button class="btn btn-tool" id="tool-redact" title="Zwartlakken">
                                 <span>█</span> Zwartlakken
-                            </button>
-                            <button class="btn btn-tool" id="tool-signature" title="Markeer handtekening">
-                                <span>✍️</span> Handtekening
                             </button>
                         </div>
                         <button class="btn btn-secondary" id="btn-detect">
@@ -114,21 +107,20 @@
                         </div>
                     </aside>
 
-                    <!-- PDF Viewer -->
+                    <!-- PDF Viewer - Scrollable -->
                     <div class="pdf-viewer-container">
                         <div class="pdf-controls">
                             <button class="btn btn-icon" id="btn-zoom-out">−</button>
                             <span id="zoom-level">100%</span>
                             <button class="btn btn-icon" id="btn-zoom-in">+</button>
                             <span class="separator">|</span>
-                            <button class="btn btn-icon" id="btn-prev-page">◀</button>
                             <span>Pagina <span id="current-page">1</span> / <span id="total-pages">1</span></span>
-                            <button class="btn btn-icon" id="btn-next-page">▶</button>
                         </div>
+                        <!-- Scrollable pages container -->
                         <div class="pdf-viewer" id="pdf-viewer">
-                            <canvas id="pdf-canvas"></canvas>
-                            <div id="redaction-layer" class="redaction-layer"></div>
-                            <div id="text-layer" class="text-layer"></div>
+                            <div id="pages-container" class="pages-container">
+                                <!-- Pages will be rendered here dynamically -->
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -142,27 +134,22 @@
                 <div class="category-card">
                     <span class="category-icon">👤</span>
                     <h4>Namen & ID's</h4>
-                    <p>BSN, IBAN, e-mail, telefoonnummers, initialen</p>
+                    <p>BSN, IBAN, e-mail, telefoonnummers</p>
                 </div>
                 <div class="category-card">
                     <span class="category-icon">✍️</span>
                     <h4>Handtekeningen</h4>
-                    <p>Parafen, handtekeningen <em>(handmatig)</em></p>
+                    <p>Automatisch herkend via tekstpatronen</p>
                 </div>
                 <div class="category-card">
                     <span class="category-icon">📍</span>
                     <h4>Locaties</h4>
-                    <p>Adressen, postcodes, GPS-coördinaten</p>
+                    <p>Adressen, postcodes</p>
                 </div>
                 <div class="category-card">
-                    <span class="category-icon">📅</span>
-                    <h4>Data & Tijden</h4>
-                    <p>Geboortedata, specifieke datums</p>
-                </div>
-                <div class="category-card">
-                    <span class="category-icon">🔐</span>
-                    <h4>Metadata</h4>
-                    <p>Auteur, wijzigingsdata, software</p>
+                    <span class="category-icon">🧠</span>
+                    <h4>Slim leren</h4>
+                    <p>Leert van uw handmatige redacties</p>
                 </div>
             </div>
         </section>
