@@ -29,9 +29,8 @@ const App = {
     pageCanvases: [],
     pageContainers: [],
 
-    // Feedback loop: learned words and ignored words
-    learnedWords: new Set(),
-    ignoredWords: new Set(),
+
+    // learnedWords/ignoredWords are now managed by Detector module
 
     // DOM Elements
     elements: {},
@@ -72,7 +71,9 @@ const App = {
             toolRedact: document.getElementById('tool-redact'),
             btnDetect: document.getElementById('btn-detect'),
             btnExport: document.getElementById('btn-export'),
+            btnExport: document.getElementById('btn-export'),
             btnClearMetadata: document.getElementById('btn-clear-metadata'),
+            btnClearLearning: document.getElementById('btn-clear-learning'),
 
             // PDF viewer
             pdfViewer: document.getElementById('pdf-viewer'),
@@ -134,7 +135,9 @@ const App = {
         this.elements.toolRedact.addEventListener('click', () => this.setTool('redact'));
         this.elements.btnDetect.addEventListener('click', () => this.openDetectionModal());
         this.elements.btnExport.addEventListener('click', () => this.exportPDF());
+        this.elements.btnExport.addEventListener('click', () => this.exportPDF());
         this.elements.btnClearMetadata.addEventListener('click', () => this.clearMetadata());
+        this.elements.btnClearLearning?.addEventListener('click', () => this.clearLearnedData());
 
         // Zoom
         this.elements.btnZoomIn.addEventListener('click', () => this.zoom(0.25));
@@ -425,10 +428,13 @@ const App = {
                 }
             }
 
-            // Add matched text to learned words
+            // Add matched text to learned words - sync with Detector!
             const fullText = matchedText.join(' ').trim();
             if (fullText.length > 2) {
-                this.learnedWords.add(fullText.toLowerCase());
+                // Delegate completely to Detector
+                if (typeof Detector !== 'undefined' && Detector.learnWord) {
+                    Detector.learnWord(fullText);
+                }
                 console.log('Learned word from manual redaction:', fullText);
             }
         } catch (error) {
@@ -499,7 +505,10 @@ const App = {
 
                     // FEEDBACK LOOP: If auto-detected, add to ignore list
                     if (redaction.value && redaction.type !== 'manual') {
-                        this.ignoredWords.add(redaction.value.toLowerCase());
+                        // Delegate completely to Detector
+                        if (typeof Detector !== 'undefined' && Detector.ignoreWord) {
+                            Detector.ignoreWord(redaction.value);
+                        }
                         console.log('Added to ignore list:', redaction.value);
                     }
 
@@ -675,6 +684,8 @@ const App = {
         this.elements.uploadZone.classList.add('hidden');
         this.elements.editor.classList.remove('hidden');
         document.querySelector('.info-panel')?.classList.add('hidden');
+        // Hide the header for more editing space
+        document.querySelector('.header')?.classList.add('hidden');
     },
 
     /**
@@ -684,12 +695,14 @@ const App = {
         this.elements.editor.classList.add('hidden');
         this.elements.uploadZone.classList.remove('hidden');
         document.querySelector('.info-panel')?.classList.remove('hidden');
+        // Show the header again
+        document.querySelector('.header')?.classList.remove('hidden');
 
         this.pdfDoc = null;
         this.currentPage = 1;
         this.scale = 1.0;
-        this.learnedWords.clear();
-        this.ignoredWords.clear();
+        this.scale = 1.0;
+        // Do NOT clear learned data on reset - it's persistent now!
         Redactor.clearRedactions();
         this.elements.fileInput.value = '';
         this.updateRedactionsList();
@@ -776,6 +789,19 @@ const App = {
                 <span class="metadata-value redacted">✓ Metadata gewist</span>
             </div>
         `;
+    },
+
+    /**
+     * Clear learned data
+     */
+    async clearLearnedData() {
+        if (confirm('Weet u zeker dat u alle geleerde woorden en genegeerde woorden wilt wissen?')) {
+            if (typeof Detector !== 'undefined' && Detector.clearLearnedData) {
+                Detector.clearLearnedData();
+                this.updateDetectionsList();
+                alert('Geleerde data is gewist.');
+            }
+        }
     },
 
     /**
@@ -892,35 +918,8 @@ const App = {
             }
 
             // Run standard detection
+            // Detector now handles learned words and ignored words internally
             const pageDetections = Detector.detect(combinedText, i);
-
-            // FEEDBACK LOOP: Also search for learned words
-            for (const learnedWord of this.learnedWords) {
-                const regex = new RegExp(this.escapeRegex(learnedWord), 'gi');
-                let match;
-                while ((match = regex.exec(combinedText)) !== null) {
-                    const alreadyExists = pageDetections.all.some(d =>
-                        d.value.toLowerCase() === learnedWord.toLowerCase() && d.page === i
-                    );
-                    if (!alreadyExists) {
-                        pageDetections.all.push({
-                            type: 'learned',
-                            name: 'Geleerd woord',
-                            icon: '🧠',
-                            value: match[0],
-                            page: i,
-                            startIndex: match.index,
-                            endIndex: match.index + match[0].length,
-                            selected: true
-                        });
-                    }
-                }
-            }
-
-            // FEEDBACK LOOP: Filter out ignored words
-            pageDetections.all = pageDetections.all.filter(d =>
-                !this.ignoredWords.has(d.value.toLowerCase())
-            );
 
             // Get bounds for detections
             for (const detection of pageDetections.all) {
@@ -932,10 +931,6 @@ const App = {
 
             // Merge results
             for (const [category, data] of Object.entries(pageDetections.byCategory)) {
-                // Filter category items too
-                data.items = data.items.filter(item =>
-                    !this.ignoredWords.has(item.value.toLowerCase())
-                );
 
                 if (data.items.length === 0) continue;
 
@@ -1169,12 +1164,29 @@ const App = {
         }
 
         const applied = Redactor.getAllRedactions().length;
+
         let learnedInfo = '';
-        if (this.learnedWords.size > 0) {
-            learnedInfo = `<br><small>🧠 ${this.learnedWords.size} geleerd</small>`;
-        }
-        if (this.ignoredWords.size > 0) {
-            learnedInfo += `<br><small>🚫 ${this.ignoredWords.size} genegeerd</small>`;
+
+        // Use Detector state for stats
+        if (typeof Detector !== 'undefined') {
+            const learnedCount = Detector.getLearnedWords ? Detector.getLearnedWords().size : 0;
+            const ignoredCount = Detector.getIgnoredWords ? Detector.getIgnoredWords().size : 0;
+
+            if (learnedCount > 0) {
+                learnedInfo = `<br><small>🧠 ${learnedCount} geleerd</small>`;
+            }
+            if (ignoredCount > 0) {
+                learnedInfo += `<br><small>🚫 ${ignoredCount} genegeerd</small>`;
+            }
+
+            // Show/hide clear button
+            if (this.elements.btnClearLearning) {
+                if (learnedCount > 0 || ignoredCount > 0) {
+                    this.elements.btnClearLearning.classList.remove('hidden');
+                } else {
+                    this.elements.btnClearLearning.classList.add('hidden');
+                }
+            }
         }
 
         this.elements.detectionsList.innerHTML = `

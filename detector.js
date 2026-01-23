@@ -4,6 +4,11 @@
  */
 
 const Detector = {
+    // Learning data storage for feedback loop
+    learnedWords: new Set(),   // Words the user has manually redacted
+    ignoredWords: new Set(),   // Words the user has removed from redaction (false positives)
+    storageKey: 'avg_anonimiseer_learning_data',
+
     // Detection patterns for Dutch personal data
     patterns: {
         // BSN (Burgerservicenummer) - 9 digits with 11-proof
@@ -76,7 +81,7 @@ const Detector = {
     // Name patterns (harder to detect reliably)
     namePatterns: {
         // Common Dutch name prefixes that might indicate a name follows
-        prefixes: ['de heer', 'mevrouw', 'mevr.', 'dhr.', 'mr.', 'dr.', 'ir.', 'prof.', 'ing.'],
+        prefixes: ['de heer', 'mevrouw', 'mevr.', 'dhr.', 'mr.', 'dr.', 'ir.', 'prof.', 'ing.', 'drs.', 'bc.', 'ds.', 'fa.'],
         // Pattern for capitalized words (potential names)
         capitalizedWords: /\b[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\s+(?:van|de|der|den|het|ten|ter|te)\s+)?[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+\b/g
     },
@@ -319,6 +324,30 @@ const Detector = {
             results.stats.categories++;
         }
 
+        // Detect learned words (from feedback loop)
+        const learnedDetections = this.detectLearnedWords(text, pageNumber);
+        if (learnedDetections.length > 0) {
+            results.byCategory['learned'] = {
+                name: 'Geleerde patronen',
+                icon: '🧠',
+                items: learnedDetections
+            };
+            results.all.push(...learnedDetections);
+            results.stats.categories++;
+        }
+
+        // Filter out ignored words (false positives marked by user)
+        results.all = results.all.filter(detection => !this.shouldIgnore(detection.value));
+
+        // Also update byCategory to remove ignored items
+        for (const [category, data] of Object.entries(results.byCategory)) {
+            data.items = data.items.filter(item => !this.shouldIgnore(item.value));
+            if (data.items.length === 0) {
+                delete results.byCategory[category];
+                results.stats.categories--;
+            }
+        }
+
         results.stats.total = results.all.length;
         return results;
     },
@@ -345,7 +374,11 @@ const Detector = {
             'gemeente', 'provincie', 'waterschap', 'rijkswaterstaat', 'ministerie',
             'rijksoverheid', 'omgevingsdienst', 'veiligheidsregio', 'ggd',
             'kadaster', 'rvo', 'rivm', 'bodem+', 'team civiel', 'team civiele',
-            'team', 'afdeling', 'dienst', 'sector', 'bureau'
+            'team', 'afdeling', 'dienst', 'sector', 'bureau', 'college', 'raad',
+            'stichting', 'vereniging', 'coöperatie', 'maatschap', 'firma',
+            'inspectie', 'autoriteit', 'kamer van koophandel', 'kvk', 'politie',
+            'brandweer', 'ambulance', 'ziekenhuis', 'instelling', 'school',
+            'universiteit', 'hogeschool'
         ];
 
         // CERTIFIED LABS AND ADVIESBUREAUS - These should NOT be anonymized
@@ -367,7 +400,10 @@ const Detector = {
             'projectleider', 'trainee', 'stagiair', 'directeur', 'manager',
             'medewerker', 'adviseur', 'consultant', 'specialist', 'coordinator',
             'assistent', 'secretaris', 'voorzitter', 'penningmeester',
-            'veldwerker', 'monsternemer', 'analist', 'rapporteur', 'opdrachtgever'
+            'bestuurder', 'commissaris', 'griffier', 'bode', 'beheerder',
+            'veldwerker', 'monsternemer', 'analist', 'rapporteur', 'opdrachtgever',
+            'contactpersoon', 'behandelaar', 'architect', 'constructeur',
+            'aannemer', 'uitvoerder', 'opzichter', 'makelaar', 'taxateur'
         ];
 
         // Common words that look like names but aren't - EXTENDED for soil reports
@@ -392,10 +428,20 @@ const Detector = {
             'januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
             'augustus', 'september', 'oktober', 'november', 'december',
             // Education 
+            // Education 
             'bachelor', 'master', 'hbo', 'mbo', 'wo', 'universiteit', 'hogeschool',
-            // Location indicators
-            'arendstuin', 'reijndersbuurt', 'woonwijk', 'bedrijventerrein'
+            // Location indicators & Directions
+            'arendstuin', 'reijndersbuurt', 'woonwijk', 'bedrijventerrein',
+            'noord', 'oost', 'zuid', 'west', 'centrum', 'binnenstad',
+            // Document terms
+            'versie', 'datum', 'status', 'project', 'betreft', 'kenmerk',
+            'onderwerp', 'referentie', 'projectnummer', 'dossier', 'pagina',
+            'blad', 'bijlage', 'concept', 'definitief', 'totaal', 'subtotaal',
+            // Policy terms
+            'beleid', 'visie', 'strategie', 'nota', 'besluit', 'verordening',
+            'regeling', 'wet', 'artikel', 'paragraaf', 'lid', 'onderdeel'
         ];
+
 
         // Context words that indicate what follows is a professional party (don't redact)
         const contextExclusions = {
@@ -522,6 +568,150 @@ const Detector = {
         return names;
     },
 
+    // ==================== LEARNING FUNCTIONS ====================
+
+    /**
+     * Learn a word/phrase from manual redaction
+     * @param {string} word - The word or phrase to learn
+     */
+    learnWord(word) {
+        if (!word || word.trim().length < 2) return;
+        const normalized = word.trim().toLowerCase();
+        this.learnedWords.add(normalized);
+        // Remove from ignored if it was there
+        this.ignoredWords.delete(normalized);
+        console.log(`[Detector] Learned word: "${normalized}"`);
+        this.saveLearnedData();
+    },
+
+    /**
+     * Ignore a word/phrase (mark as false positive)
+     * @param {string} word - The word or phrase to ignore
+     */
+    ignoreWord(word) {
+        if (!word || word.trim().length < 2) return;
+        const normalized = word.trim().toLowerCase();
+        this.ignoredWords.add(normalized);
+        // Remove from learned if it was there
+        this.learnedWords.delete(normalized);
+        console.log(`[Detector] Ignoring word: "${normalized}"`);
+        this.saveLearnedData();
+    },
+
+    /**
+     * Get all learned words
+     * @returns {Set} Set of learned words
+     */
+    getLearnedWords() {
+        return this.learnedWords;
+    },
+
+    /**
+     * Get all ignored words
+     * @returns {Set} Set of ignored words
+     */
+    getIgnoredWords() {
+        return this.ignoredWords;
+    },
+
+    /**
+     * Clear all learned data
+     */
+    clearLearnedData() {
+        this.learnedWords.clear();
+        this.ignoredWords.clear();
+        console.log('[Detector] Cleared all learned data');
+        this.saveLearnedData();
+    },
+
+    /**
+     * Save learned data to localStorage
+     */
+    saveLearnedData() {
+        try {
+            const data = {
+                learned: Array.from(this.learnedWords),
+                ignored: Array.from(this.ignoredWords)
+            };
+            localStorage.setItem(this.storageKey, JSON.stringify(data));
+        } catch (e) {
+            console.error('[Detector] Error saving learned data:', e);
+        }
+    },
+
+    /**
+     * Load learned data from localStorage
+     */
+    loadLearnedData() {
+        try {
+            const json = localStorage.getItem(this.storageKey);
+            if (json) {
+                const data = JSON.parse(json);
+                if (data.learned && Array.isArray(data.learned)) {
+                    this.learnedWords = new Set(data.learned);
+                }
+                if (data.ignored && Array.isArray(data.ignored)) {
+                    this.ignoredWords = new Set(data.ignored);
+                }
+                console.log(`[Detector] Loaded ${this.learnedWords.size} learned words and ${this.ignoredWords.size} ignored words`);
+            }
+        } catch (e) {
+            console.error('[Detector] Error loading learned data:', e);
+        }
+    },
+
+    /**
+     * Detect occurrences of learned words in text
+     * @param {string} text - Text to search
+     * @param {number} pageNumber - Page number
+     * @returns {Array} Array of detections
+     */
+    detectLearnedWords(text, pageNumber = 1) {
+        const detections = [];
+        const lowerText = text.toLowerCase();
+
+        for (const word of this.learnedWords) {
+            // Skip if this word is in the ignored list
+            if (this.ignoredWords.has(word)) continue;
+
+            // Find all occurrences
+            let startIndex = 0;
+            while ((startIndex = lowerText.indexOf(word, startIndex)) !== -1) {
+                // Get the original case version from the text
+                const originalWord = text.substring(startIndex, startIndex + word.length);
+
+                detections.push({
+                    type: 'learned',
+                    name: 'Geleerd patroon',
+                    icon: '🧠',
+                    value: originalWord,
+                    page: pageNumber,
+                    startIndex: startIndex,
+                    endIndex: startIndex + word.length,
+                    confidence: 'learned',
+                    selected: true
+                });
+
+                startIndex += word.length;
+            }
+        }
+
+        return detections;
+    },
+
+    /**
+     * Check if a detection should be filtered out (was marked as false positive)
+     * @param {string} value - The detected value to check
+     * @returns {boolean} True if should be filtered out
+     */
+    shouldIgnore(value) {
+        if (!value) return false;
+        const normalized = value.trim().toLowerCase();
+        return this.ignoredWords.has(normalized);
+    },
+
+    // ==================== END LEARNING FUNCTIONS ====================
+
     /**
      * Get summary of detection types
      */
@@ -537,4 +727,9 @@ const Detector = {
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = Detector;
+}
+
+// Initialize persistence if running in browser
+if (typeof window !== 'undefined') {
+    Detector.loadLearnedData();
 }
