@@ -536,6 +536,9 @@ const Detector = {
         let match;
         while ((match = fullNameRegex.exec(text)) !== null) {
             const firstName = match[1];
+            const tussenvoegsel = match[2] || '';
+            const lastName = match[3];
+
             const fullName = tussenvoegsel
                 ? `${firstName} ${tussenvoegsel} ${lastName}`
                 : `${firstName} ${lastName}`;
