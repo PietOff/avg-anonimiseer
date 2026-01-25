@@ -40,7 +40,26 @@ const Detector = {
             name: 'Telefoon',
             icon: '📞',
             regex: /\b(?:\+31|0031|0)[\s.-]?(?:[0-9][\s.-]?){9}\b/g,
-            validate: () => true
+            validate: (match) => {
+                const clean = match.trim();
+
+                // Reject if it looks like a date (e.g. 10-04-2024)
+                if (/^\d{2}-\d{2}-/.test(clean) || /-\d{2}-\d{2}$/.test(clean)) return false;
+
+                // Reject if it looks like a floating point number (e.g. 0.02, 1.0)
+                if (/^0\.[0-9]+/.test(clean) || /^[0-9]\.[0-9]+/.test(clean)) return false;
+
+                // Reject if it contains newlines (common in column data treated as one phone number)
+                if (match.includes('\n')) return false;
+
+                // Reject if it's just a sequence of very short groups (like 0 0 0 0)
+                if ((clean.match(/0/g) || []).length > 8) {
+                    // Too many zeros is suspicious for a personal number unless it's 06
+                    if (!clean.startsWith('06')) return false;
+                }
+
+                return true;
+            }
         },
 
         // Dutch postal codes (stricter pattern to avoid matching dates like "2024 mei")
@@ -172,6 +191,11 @@ const Detector = {
         'benzeen', 'tolueen', 'ethylbenzeen', 'xylenen', 'arseen', 'cadmium',
         'chroom', 'koper', 'kwik', 'lood', 'nikkel', 'zink', 'barium',
         'cyanide', 'molybdeen', 'kobalt', 'nafthal', 'vluchtige', 'minerale', 'olie',
+        // Table headers and OCR noise
+        'monsterspecificatie', 'eenheid', 'meetpunt', 'diepte', 'barcode',
+        'aanlevering', 'verpakking', 'so grind', 'zintuiglijk', 'visuele',
+        'benheid', 'etenheid', 'analyse', 'resultaat', 'toetsing', 'idem',
+        'projektnaam', 'startdaton', 'kbde', 'velligheid', 'vtrale', 'virile', 'varelf',
         // Cities
         'nederland', 'amsterdam', 'rotterdam', 'utrecht', 'eindhoven',
         'leeuwarden', 'groningen', 'arnhem', 'nijmegen', 'tilburg',
@@ -194,7 +218,7 @@ const Detector = {
         'regeling', 'wet', 'artikel', 'paragraaf', 'lid', 'onderdeel',
         // Environmental values
         'interventiewaarde', 'streefwaarde', 'tussenwaarde', 'achtergrondwaarde',
-        'normwaarde', 'veiligheid', 'vrijgave', 'overschrijding'
+        'normwaarde', 'veiligheid', 'vrijgave', 'overschrijding', 'indicatief'
     ],
 
     // Context words exclusions
