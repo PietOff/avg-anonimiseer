@@ -165,6 +165,13 @@ const Detector = {
         'bodemonderzoek', 'verkennend', 'nader', 'historisch', 'actualiserend',
         'bodemkwaliteit', 'grondwater', 'verontreiniging', 'sanering',
         'milieuhygiënisch', 'asbest', 'herontwikkeling', 'bestemmingsplan',
+        'asfaltonderzoek', 'boorprofielen', 'grondsoort', 'zintuiglijk',
+        'analyses', 'beoordeling', 'gehalten', 'eenheid', 'monstersoort',
+        'monsterspecificatie', 'projectnaam', 'startdatum', 'relatie',
+        // Chemicals
+        'benzeen', 'tolueen', 'ethylbenzeen', 'xylenen', 'arseen', 'cadmium',
+        'chroom', 'koper', 'kwik', 'lood', 'nikkel', 'zink', 'barium',
+        'cyanide', 'molybdeen', 'kobalt', 'nafthal', 'vluchtige', 'minerale', 'olie',
         // Cities
         'nederland', 'amsterdam', 'rotterdam', 'utrecht', 'eindhoven',
         'leeuwarden', 'groningen', 'arnhem', 'nijmegen', 'tilburg',
@@ -184,7 +191,10 @@ const Detector = {
         'blad', 'bijlage', 'concept', 'definitief', 'totaal', 'subtotaal',
         // Policy terms
         'beleid', 'visie', 'strategie', 'nota', 'besluit', 'verordening',
-        'regeling', 'wet', 'artikel', 'paragraaf', 'lid', 'onderdeel'
+        'regeling', 'wet', 'artikel', 'paragraaf', 'lid', 'onderdeel',
+        // Environmental values
+        'interventiewaarde', 'streefwaarde', 'tussenwaarde', 'achtergrondwaarde',
+        'normwaarde', 'veiligheid', 'vrijgave', 'overschrijding'
     ],
 
     // Context words exclusions
