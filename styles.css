@@ -334,11 +334,19 @@ body::before {
     align-items: center;
     justify-content: space-between;
     padding: var(--spacing-md);
-    background: var(--bg-secondary);
+    background: rgba(26, 26, 46, 0.95);
+    /* Slightly transparent for backdrop effect */
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
     gap: var(--spacing-md);
     flex-wrap: wrap;
+    position: sticky;
+    top: 20px;
+    /* Slight offset from top window edge */
+    z-index: 100;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-md);
 }
 
 .toolbar-left,
