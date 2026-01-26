@@ -41,6 +41,7 @@ const App = {
     init() {
         this.cacheElements();
         this.bindEvents();
+        this.bindSearchEvents();
         console.log('AVG Anonimiseer initialized');
 
         if (typeof pdfjsLib === 'undefined') {
@@ -436,7 +437,14 @@ const App = {
                     Detector.learnWord(fullText);
                 }
                 console.log('Learned word from manual redaction:', fullText);
+
+                // FEATURE: Global Redaction (Apply to all)
+                // If the word is significant (>3 chars), try to find and redact it everywhere else
+                if (fullText.length > 3) {
+                    this.applyRedactionGlobally(fullText);
+                }
             }
+            console.log('Learned word from manual redaction:', fullText);
         } catch (error) {
             console.error('Error learning from redaction:', error);
         }
@@ -542,6 +550,149 @@ const App = {
                 redactionLayer.appendChild(box);
             }
         }
+    },
+
+    /**
+     * Find and redact a specific word/phrase across the entire document
+     */
+    async applyRedactionGlobally(textToRedact) {
+        if (!this.pdfDoc) return;
+
+        console.log(`Applying global redaction for: "${textToRedact}"`);
+        let totalApplied = 0;
+
+        for (let i = 1; i <= this.pdfDoc.numPages; i++) {
+            const page = await this.pdfDoc.getPage(i);
+            const textContent = await page.getTextContent();
+
+            // Reconstruct full text with items map for coordinate lookup
+            const textItems = textContent.items;
+            const fullPageText = textItems.map(item => item.str).join('');
+
+            // Simple match?
+            if (fullPageText.toLowerCase().includes(textToRedact.toLowerCase())) {
+                // Find distinct occurrences
+                for (const item of textItems) {
+                    if (item.str.toLowerCase().includes(textToRedact.toLowerCase())) {
+                        // Create a rough bounding box for this item
+                        const x = item.transform[4];
+                        const y = item.transform[5];
+                        const width = item.width;
+                        const height = item.height || 12; // Fallback height
+
+                        // Check if already redacted
+                        const isRedacted = this.isAreaRedacted(i, { x, y, width, height });
+
+                        if (!isRedacted) {
+                            Redactor.addRedaction(i, { x, y, width, height }, 'learned');
+                            totalApplied++;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (totalApplied > 0) {
+            this.showToast(`Nog ${totalApplied} keer "${textToRedact}" zwartgelakt.`);
+            this.renderAllRedactions();
+        }
+    },
+
+    /**
+     * Check if an area is already covered by a redaction
+     */
+    isAreaRedacted(pageNum, bounds) {
+        const pageRedactions = Redactor.redactions[pageNum] || [];
+        return pageRedactions.some(r => {
+            return (bounds.x >= r.x && bounds.x + bounds.width <= r.x + r.width &&
+                bounds.y >= r.y && bounds.y + bounds.height <= r.y + r.height);
+        });
+    },
+
+    /**
+     * Show a temporary toast message
+     */
+    showToast(message) {
+        let toast = document.getElementById('toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'toast';
+            toast.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: var(--accent-primary);
+                color: white;
+                padding: 10px 20px;
+                border-radius: 8px;
+                z-index: 1000;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                opacity: 0;
+                transition: opacity 0.3s;
+            `;
+            document.body.appendChild(toast);
+        }
+
+        toast.textContent = message;
+        toast.style.opacity = '1';
+
+        setTimeout(() => {
+            toast.style.opacity = '0';
+        }, 3000);
+    },
+
+    bindSearchEvents() {
+        const searchInput = document.getElementById('search-input');
+        const searchResults = document.getElementById('search-results');
+        let debounceTimer;
+
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(debounceTimer);
+                const term = e.target.value.trim();
+
+                debounceTimer = setTimeout(async () => {
+                    if (term.length < 2) {
+                        if (searchResults) searchResults.classList.add('hidden');
+                        return;
+                    }
+
+                    if (searchResults) {
+                        searchResults.classList.remove('hidden');
+                        searchResults.innerHTML = '<div class="detection-item">Zoeken...</div>';
+                    }
+
+                    const count = await this.countOccurrencesGlobally(term);
+
+                    if (searchResults) {
+                        searchResults.innerHTML = `
+                            <div class="detection-item" onclick="App.applyRedactionGlobally('${term}')">
+                                <div style="flex:1">
+                                    <span class="type">Gevonden: ~${count}x</span><br>
+                                    <span class="value">"${term}"</span>
+                                </div>
+                                <button class="btn btn-small btn-tool" style="pointer-events:none">Lakken</button>
+                            </div>
+                        `;
+                    }
+                }, 500);
+            });
+        }
+    },
+
+    async countOccurrencesGlobally(term) {
+        if (!this.pdfDoc) return 0;
+        let count = 0;
+        for (let i = 1; i <= Math.min(this.pdfDoc.numPages, 20); i++) {
+            const page = await this.pdfDoc.getPage(i);
+            const textContent = await page.getTextContent();
+            const text = textContent.items.map(item => item.str).join(' ');
+            if (text.toLowerCase().includes(term.toLowerCase())) {
+                count++;
+            }
+        }
+        return count + (this.pdfDoc.numPages > 20 ? '+' : '');
     },
 
     /**

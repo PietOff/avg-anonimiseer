@@ -749,6 +749,41 @@ const Detector = {
     // ==================== END LEARNING FUNCTIONS ====================
 
     /**
+     * Detect specific custom text for search functionality
+     * @param {string} text - The text to scan
+     * @param {string} searchTerm - The term to search for
+     * @returns {Array} List of matches with context
+     */
+    detectCustom(text, searchTerm) {
+        if (!text || !searchTerm || searchTerm.length < 2) return [];
+
+        const matches = [];
+        const lowerText = text.toLowerCase();
+        const lowerTerm = searchTerm.toLowerCase();
+        let startIndex = 0;
+        let index;
+
+        while ((index = lowerText.indexOf(lowerTerm, startIndex)) > -1) {
+            // Get original casing from text
+            const value = text.substr(index, searchTerm.length);
+
+            matches.push({
+                type: 'custom',
+                name: 'Zoekresultaat',
+                icon: '🔍',
+                value: value,
+                startIndex: index,
+                endIndex: index + searchTerm.length,
+                selected: true
+            });
+
+            startIndex = index + searchTerm.length;
+        }
+
+        return matches;
+    },
+
+    /**
      * Get summary of detection types
      */
     getCategories() {
