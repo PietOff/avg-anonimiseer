@@ -223,6 +223,8 @@ const Detector = {
         'burgemeester', 'wethouders', 'college', 'raad', 'state',
         'opdrachtgever', 'opdrachtnemer', 'leverancier', 'dienstverlener',
         'wederpartij', 'derden', 'personeel', 'medewerkers', 'functionaris',
+        // Common sentence starters / non-names
+        'het', 'deze', 'dit', 'dat', 'een', 'elke', 'ieder', 'beide',
         // Environmental values
         'interventiewaarde', 'streefwaarde', 'tussenwaarde', 'achtergrondwaarde',
         'normwaarde', 'veiligheid', 'vrijgave', 'overschrijding', 'indicatief'
@@ -636,6 +638,12 @@ const Detector = {
                     'paragraaf', 'hoofdstuk', 'bijlage', 'tabel', 'figuur'
                 ];
                 if (commonFalsePositives.includes(lowerFirst) || commonFalsePositives.includes(lowerLast)) {
+                    continue;
+                }
+
+                // Extra check: Disallow if first word is a common article/demonstrative (now in exclusions, but check explicitly)
+                const sentenceStarters = ['het', 'deze', 'dit', 'dat', 'een', 'elke', 'ieder', 'beide'];
+                if (sentenceStarters.includes(lowerFirst)) {
                     continue;
                 }
 
