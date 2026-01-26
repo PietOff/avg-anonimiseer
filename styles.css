@@ -388,7 +388,13 @@ body::before {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
+    /* Sticky positioning */
+    position: sticky;
+    top: 100px;
+    /* Below the sticky toolbar */
+    max-height: calc(100vh - 120px);
     overflow-y: auto;
+    min-width: 300px;
 }
 
 .sidebar-section {

@@ -1340,11 +1340,42 @@ const App = {
             }
         }
 
+        let itemsHtml = '';
+        if (this.currentDetections) {
+            // Flatten items
+            const allItems = [];
+            Object.values(this.currentDetections.byCategory).forEach(cat => {
+                allItems.push(...cat.items);
+            });
+
+            // Limit display to 50 items to prevent lag
+            const displayItems = allItems.slice(0, 50);
+
+            itemsHtml = '<div class="detections-scrollable">';
+            displayItems.forEach(item => {
+                const isIgnored = Detector.shouldIgnore ? Detector.shouldIgnore(item.value) : false;
+                const style = isIgnored ? 'opacity: 0.5; text-decoration: line-through;' : '';
+                itemsHtml += `
+                    <div class="detection-item" style="${style}">
+                        <div style="flex:1; overflow:hidden;">
+                            <span class="type">${item.icon || '🔹'} ${item.name}</span><br>
+                            <span class="value" title="${item.value}">${this.maskValue(item.value)}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            if (allItems.length > 50) {
+                itemsHtml += `<div class="detection-item" style="justify-content:center; color:var(--text-muted)">...en nog ${allItems.length - 50} items</div>`;
+            }
+            itemsHtml += '</div>';
+        }
+
         this.elements.detectionsList.innerHTML = `
-            <p style="font-size: 0.85rem; margin-bottom: 0.5rem;">
-                ${this.currentDetections.stats.total} gevonden, ${applied} geredacteerd
+            <p style="font-size: 0.85rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+                <strong>${this.currentDetections.stats.total} gevonden</strong> (${applied} toegepast)
                 ${learnedInfo}
             </p>
+            ${itemsHtml}
         `;
     },
 
