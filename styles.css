@@ -395,6 +395,9 @@ body::before {
     max-height: calc(100vh - 120px);
     overflow-y: auto;
     min-width: 300px;
+    align-self: start;
+    /* Critical for sticky in grid */
+    z-index: 90;
 }
 
 .sidebar-section {
