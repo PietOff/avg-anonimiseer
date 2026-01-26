@@ -216,6 +216,13 @@ const Detector = {
         // Policy terms
         'beleid', 'visie', 'strategie', 'nota', 'besluit', 'verordening',
         'regeling', 'wet', 'artikel', 'paragraaf', 'lid', 'onderdeel',
+        'hoofdstuk', 'bepaling', 'clausule', 'voorwaarde', 'conditie',
+        'document', 'bestand', 'inleiding', 'slotbepaling', 'ondertekening',
+        'inkoopvoorwaarden', 'aanbesteding', 'offerte', 'opdracht',
+        'overeenkomst', 'contract', 'partijen', 'gemeente', 'provincie',
+        'burgemeester', 'wethouders', 'college', 'raad', 'state',
+        'opdrachtgever', 'opdrachtnemer', 'leverancier', 'dienstverlener',
+        'wederpartij', 'derden', 'personeel', 'medewerkers', 'functionaris',
         // Environmental values
         'interventiewaarde', 'streefwaarde', 'tussenwaarde', 'achtergrondwaarde',
         'normwaarde', 'veiligheid', 'vrijgave', 'overschrijding', 'indicatief'
@@ -582,8 +589,20 @@ const Detector = {
                 const lowerFirst = firstName.toLowerCase();
                 const lowerLast = lastName.toLowerCase();
 
-                // Skip if it looks like a location or common word
-                if (this.excludeWords.some(w => lowerFirst === w || lowerLast === w)) {
+                // Skip if it looks like a location or common word or legal term
+                if (this.excludeWords.some(w => lowerFirst === w || lowerLast === w) ||
+                    this.publicOfficials.some(w => lowerFirst === w || lowerLast === w) ||
+                    this.governmentBodies.some(w => lowerFirst === w || lowerLast === w)) {
+                    continue;
+                }
+
+                // Specific fix for "Algemene Voorwaarden" or "Gemeente Hilversum"
+                const commonFalsePositives = [
+                    'algemene', 'bijzondere', 'inkoop', 'voorwaarden', 'gemeente',
+                    'raad', 'college', 'burgemeester', 'wethouder', 'artikel', 'lid',
+                    'paragraaf', 'hoofdstuk', 'bijlage', 'tabel', 'figuur'
+                ];
+                if (commonFalsePositives.includes(lowerFirst) || commonFalsePositives.includes(lowerLast)) {
                     continue;
                 }
 
