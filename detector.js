@@ -310,47 +310,80 @@ const Detector = {
 
         for (const fieldDef of this.fieldLabels.primary) {
             // Create regex to find label followed by content
-            // Match patterns like: "Opdrachtgever: Naam Achternaam" or "Opdrachtgever Naam Achternaam"
+            // STRICTER: Require colon OR if space, value must start with uppercase
             const labelRegex = new RegExp(
-                fieldDef.label + '[:\\s]+([^\\n]{3,50})',
+                fieldDef.label + '(:\\s*|\\s+)([A-Z][^\\n]{3,50})',
+                'g' // 'i' flag handled by manual casing check to allow "Opdrachtgever" vs "opdrachtgever"
+            );
+
+            // Additional regex for colon without uppercase requirement (e.g. "email: piet@...")
+            const looseRegex = new RegExp(
+                fieldDef.label + ':\\s*([^\\n]{3,50})',
                 'gi'
             );
 
-            let match;
-            while ((match = labelRegex.exec(text)) !== null) {
-                const value = match[1].trim();
+            // Combine both regexes
+            const patterns = [
+                { regex: looseRegex, type: 'strict' }, // Starts with colon -> allow looser content
+                // STRICT MODE: No colon -> content MUST start with Capital and look like name
+                { regex: new RegExp(`\\b${fieldDef.label}\\s+([A-Z][^\\.\\n,:]+)`, 'g'), type: 'loose' }
+            ];
 
-                // Skip if it looks like a professional party
-                const lowerValue = value.toLowerCase();
-                const isProfessional = this.fieldLabels.professional.some(p =>
-                    lowerValue.includes(p)
-                );
+            for (const { regex, type } of patterns) {
+                let match;
+                while ((match = regex.exec(text)) !== null) {
+                    // For 'loose' pattern (no colon), check if label matches distinctively (case insensitive but word boundary)
+                    // (Already handled by \b in regex)
 
-                if (isProfessional) continue;
+                    const value = match[1].trim();
 
-                // Skip if already seen
-                if (seen.has(value.toLowerCase())) continue;
-                seen.add(value.toLowerCase());
+                    // SKIP if value looks like a sentence start (contains verbs? hard to detect)
+                    // heuristic: if it contains too many lowercase words or " en ", " van ", " de " without capitals
+                    if (type === 'loose') {
+                        // In loose mode "Opdrachtgever Piet Jansen", we want "Piet Jansen".
+                        // Regex `[A-Z][^\\.\\n,:]+` grabs until dot/newline.
+                        // "Opdrachtgever De Gemeente heeft..." -> "De Gemeente heeft..."
+                        // We must stop at lowercase words if they aren't particles.
 
-                // Check global exclusions (government bodies, etc.)
-                if (this.shouldExclude(value, match.index + match[0].indexOf(value), text)) {
-                    continue;
+                        // Refined check: Only accept if it looks like a Name/Entity
+                        // i.e. mostly Capitalized words
+                        const words = value.split(' ');
+                        const capitalizedCount = words.filter(w => /^[A-Z]/.test(w)).length;
+                        if (capitalizedCount < words.length * 0.5) continue; // Must be >50% capitalized
+                    }
+
+                    // Skip if it looks like a professional party
+                    const lowerValue = value.toLowerCase();
+                    const isProfessional = this.fieldLabels.professional.some(p =>
+                        lowerValue.includes(p)
+                    );
+
+                    if (isProfessional) continue;
+
+                    // Skip if already seen
+                    if (seen.has(value.toLowerCase())) continue;
+                    seen.add(value.toLowerCase());
+
+                    // Check global exclusions (government bodies, etc.)
+                    if (this.shouldExclude(value, match.index + match[0].indexOf(value), text)) {
+                        continue;
+                    }
+
+                    // Skip very short values or values that look like section headers
+                    if (value.length < 3 || /^[0-9\.\s]+$/.test(value)) continue;
+
+                    detections.push({
+                        type: 'labeled_field',
+                        name: fieldDef.name,
+                        icon: fieldDef.icon,
+                        value: value,
+                        page: pageNumber,
+                        startIndex: match.index + match[0].indexOf(value), // Approx start of value
+                        endIndex: match.index + match[0].length,
+                        confidence: 'high',
+                        selected: true
+                    });
                 }
-
-                // Skip very short values or values that look like section headers
-                if (value.length < 3 || /^[0-9\.\s]+$/.test(value)) continue;
-
-                detections.push({
-                    type: 'labeled_field',
-                    name: fieldDef.name,
-                    icon: fieldDef.icon,
-                    value: value,
-                    page: pageNumber,
-                    startIndex: match.index + match[0].indexOf(value),
-                    endIndex: match.index + match[0].length,
-                    confidence: 'high',
-                    selected: true
-                });
             }
         }
 
