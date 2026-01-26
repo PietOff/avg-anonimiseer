@@ -20,6 +20,12 @@ const Redactor = {
         this.originalPdfBytes = pdfBytes;
         this.pdfDoc = await PDFLib.PDFDocument.load(pdfBytes);
         this.redactions.clear();
+
+        // Initialize history with empty state
+        this.history = [];
+        this.historyIndex = -1;
+        this.saveState(); // Initial empty state
+
         return this.pdfDoc;
     },
 
@@ -45,6 +51,7 @@ const Redactor = {
         };
 
         this.redactions.get(pageNumber).push(redaction);
+        this.saveState();
         return redaction;
     },
 
@@ -59,6 +66,7 @@ const Redactor = {
                 if (redactions.length === 0) {
                     this.redactions.delete(pageNumber);
                 }
+                this.saveState();
                 return true;
             }
         }
@@ -88,6 +96,7 @@ const Redactor = {
      */
     clearRedactions() {
         this.redactions.clear();
+        this.saveState();
     },
 
     /**
@@ -259,6 +268,77 @@ const Redactor = {
             width: pdfBounds.width * scale,
             height: pdfBounds.height * scale
         };
+    },
+
+    // ==================== UNDO / REDO HISTORY ====================
+    history: [],
+    historyIndex: -1,
+    maxHistory: 50,
+
+    /**
+     * Save current state to history
+     * Should be called BEFORE making changes (or after? Usually after for a new state)
+     * For simplicity: We push the NEW state after an action.
+     * Initial state is empty.
+     */
+    saveState() {
+        // Remove any future history if we were in the middle of undoing
+        if (this.historyIndex < this.history.length - 1) {
+            this.history = this.history.slice(0, this.historyIndex + 1);
+        }
+
+        // Deep copy the current redactions map
+        // Map -> Array of [key, value] -> JSON
+        const state = JSON.stringify(Array.from(this.redactions.entries()));
+
+        this.history.push(state);
+
+        // Limit history size
+        if (this.history.length > this.maxHistory) {
+            this.history.shift();
+        } else {
+            this.historyIndex++;
+        }
+    },
+
+    /**
+     * Undo last action
+     * @returns {boolean} True if successful
+     */
+    undo() {
+        if (this.historyIndex <= 0) return false;
+
+        this.historyIndex--;
+        const previousState = JSON.parse(this.history[this.historyIndex]);
+        this.redactions = new Map(previousState);
+        return true;
+    },
+
+    /**
+     * Redo previously undone action
+     * @returns {boolean} True if successful
+     */
+    redo() {
+        if (this.historyIndex >= this.history.length - 1) return false;
+
+        this.historyIndex++;
+        const nextState = JSON.parse(this.history[this.historyIndex]);
+        this.redactions = new Map(nextState);
+        return true;
+    },
+
+    /**
+     * Check if undo is possible
+     */
+    canUndo() {
+        return this.historyIndex > 0;
+    },
+
+    /**
+     * Check if redo is possible
+     */
+    canRedo() {
+        return this.historyIndex < this.history.length - 1;
     }
 };
 
