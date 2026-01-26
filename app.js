@@ -511,16 +511,29 @@ const App = {
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
 
-                    // FEEDBACK LOOP: If auto-detected, add to ignore list
+                    // FEATURE: Global Deletion
+                    // If this redaction has a known value, delete ALL instances of it
                     if (redaction.value && redaction.type !== 'manual') {
-                        // Delegate completely to Detector
+                        // Also add to ignore list so it doesn't come back
                         if (typeof Detector !== 'undefined' && Detector.ignoreWord) {
                             Detector.ignoreWord(redaction.value);
                         }
                         console.log('Added to ignore list:', redaction.value);
+
+                        // Remove GLOBALLY
+                        this.removeRedactionGlobally(redaction.value);
+                    } else if (redaction.value) {
+                        // Even for manual ones, if they have a value attached (from learning), delete global
+                        // Ask for confirmation? For now, imply "Delete One = Delete All" as requested
+                        this.removeRedactionGlobally(redaction.value);
+
+                        // If it was manual/learned, we should probably unlearn it too?
+                        // Detector.ignoreWord(redaction.value); // Maybe safest to ignore it now
+                    } else {
+                        // Fallback for empty value redactions
+                        Redactor.removeRedaction(redaction.id);
                     }
 
-                    Redactor.removeRedaction(redaction.id);
                     this.renderAllRedactions();
                     this.updateRedactionsList();
                 });
@@ -732,6 +745,37 @@ const App = {
 
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
+    },
+
+    /**
+     * Remove all redactions matching a specific text value
+     */
+    removeRedactionGlobally(value) {
+        if (!value) return;
+
+        console.log(`Removing global redactions for: "${value}"`);
+        let count = 0;
+
+        // Iterate over all pages in Redactor
+        Object.keys(Redactor.redactions).forEach(pageNum => {
+            const pageRedactions = Redactor.redactions[pageNum];
+
+            // Filter out redactions that match the value
+            // We need to keep ones that DO NOT match
+            const toKeep = pageRedactions.filter(r => {
+                if (r.value === value) {
+                    count++;
+                    return false; // Remove
+                }
+                return true; // Keep
+            });
+
+            Redactor.redactions[pageNum] = toKeep;
+        });
+
+        if (count > 0) {
+            this.showToast(`${count} instanties van "${value}" verwijderd.`);
+        }
     },
 
     /**
