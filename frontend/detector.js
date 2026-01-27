@@ -68,10 +68,14 @@ const Detector = {
                     if (Detector.hasContext('phone', matchIndex, fullText)) return true;
                 }
 
-                // If no context and not mobile... be careful. 
-                // Maybe require it to look standard (e.g. not space separated single digits)
-                // For now, let's keep it but mark it?
-                // Actually, existing regex requires groups of digits.
+                // If no context and not mobile...
+                // STRICTER CHECK: If it's a landline (not 06) and has NO context,
+                // we require it to be formatted (have dashes or spaces) to avoid matching random 10-digit numbers.
+                const hasSeparators = /[\s.-]/.test(clean);
+                if (!hasSeparators) {
+                    return false; // Reject unformatted 10-digit strings as phone numbers without context
+                }
+
                 return true;
             }
         },
@@ -263,6 +267,14 @@ const Detector = {
         email: ['e-mail', 'email', 'mail', 'adres'],
         bsn: ['bsn', 'sofinummer', 'burger', 'nummer'],
         iban: ['iban', 'bank', 'rekening', 'rekeningnummer', 'bankrekening']
+    },
+
+    /**
+     * Context Exclusions
+     * Keywords that suggest the following text is NOT personal data
+     */
+    contextExclusions: {
+        organization: ['bedrijf', 'firma', 'stichting', 'vereniging', 'gemeente', 'provincie', 'waterschap', 'ministerie']
     },
 
     /**

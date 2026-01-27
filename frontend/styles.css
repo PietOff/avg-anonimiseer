@@ -587,8 +587,10 @@ body::before {
 /* Delete button on redaction boxes */
 .redaction-delete-btn {
     position: absolute;
-    top: -8px;
-    right: -8px;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
     width: 20px;
     height: 20px;
     border-radius: 50%;
@@ -612,7 +614,7 @@ body::before {
 
 .redaction-delete-btn:hover {
     background: #dc2626;
-    transform: scale(1.1);
+    transform: translateX(-50%) scale(1.1);
 }
 
 /* Resize handles on redaction boxes */

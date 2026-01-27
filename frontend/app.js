@@ -98,7 +98,7 @@ const App = {
             detectionProgress: document.getElementById('detection-progress'),
             detectionResults: document.getElementById('detection-results'),
             btnCancelDetection: document.getElementById('btn-cancel-detection'),
-            btnApplyDetections: document.getElementById('btn-apply-detections')
+            btnApplyDetections: document.getElementById('btn-apply-detections'),
         };
     },
 
@@ -106,36 +106,45 @@ const App = {
      * Bind event listeners
      */
     bindEvents() {
-        // Upload zone
+
+
+        // Upload
         this.elements.uploadZone.addEventListener('click', () => this.elements.fileInput.click());
+        this.elements.uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            this.elements.uploadZone.classList.add('drag-over');
+        });
+        this.elements.uploadZone.addEventListener('dragleave', () => {
+            this.elements.uploadZone.classList.remove('drag-over');
+        });
+        this.elements.uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            this.elements.uploadZone.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file) this.loadDocument(file);
+        });
+
+        this.elements.fileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) this.loadDocument(e.target.files[0]);
+        });
         this.elements.browseBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.elements.fileInput.click();
         });
-        this.elements.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
 
-        // Drag and drop
-        this.elements.uploadZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            this.elements.uploadZone.classList.add('dragover');
-        });
-        this.elements.uploadZone.addEventListener('dragleave', () => {
-            this.elements.uploadZone.classList.remove('dragover');
-        });
-        this.elements.uploadZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            this.elements.uploadZone.classList.remove('dragover');
-            if (e.dataTransfer.files.length > 0) {
-                this.loadFile(e.dataTransfer.files[0]);
-            }
-        });
-
+        // Toolbar
+        this.elements.btnBack.addEventListener('click', () => this.resetToUpload());
         // Toolbar
         this.elements.btnBack.addEventListener('click', () => this.resetToUpload());
         this.elements.toolSelect.addEventListener('click', () => this.setTool('select'));
         this.elements.toolRedact.addEventListener('click', () => this.setTool('redact'));
-        this.elements.btnDetect.addEventListener('click', () => this.openDetectionModal());
-        this.elements.btnExport.addEventListener('click', () => this.exportPDF());
+
+        // Auto-detect: Use AI if key is set, otherwise standard
+        this.elements.btnDetect.addEventListener('click', () => {
+            const hasKey = typeof MistralService !== 'undefined' && !!MistralService.getApiKey();
+            this.openDetectionModal(hasKey);
+        });
+
         this.elements.btnExport.addEventListener('click', () => this.exportPDF());
         this.elements.btnClearMetadata.addEventListener('click', () => this.clearMetadata());
         this.elements.btnClearLearning?.addEventListener('click', () => this.clearLearnedData());
@@ -1080,10 +1089,13 @@ const App = {
         this.elements.modal.classList.add('hidden');
     },
 
+
+
     /**
      * Run automatic detection with feedback loop integration
+     * @param {boolean} useAI - Whether to use Mistral AI
      */
-    async runDetection() {
+    async runDetection(useAI = false) {
         const allDetections = {
             byCategory: {},
             all: [],
@@ -1113,10 +1125,74 @@ const App = {
             }
 
             // Run standard detection
-            // Detector now handles learned words and ignored words internally
             const pageDetections = Detector.detect(combinedText, i);
 
-            // Get bounds for detections
+            // Run AI detection if enabled
+            if (useAI && typeof MistralService !== 'undefined') {
+                try {
+                    // Call backend proxy
+                    const aiResults = await MistralService.analyzeText(combinedText);
+
+                    // Merge AI results
+                    // Mistral returns [{type, value, confidence}]
+                    // We need to find ALL instances of these values in the text
+                    for (const item of aiResults) {
+                        const searchVal = item.value.trim();
+                        if (searchVal.length < 2) continue;
+
+                        let pos = -1;
+                        let searchPos = 0;
+                        const lowerText = combinedText.toLowerCase();
+                        const lowerSearch = searchVal.toLowerCase();
+
+                        // Find all occurrences
+                        while ((pos = lowerText.indexOf(lowerSearch, searchPos)) !== -1) {
+                            searchPos = pos + 1;
+
+                            // Check if already detected by regex to avoid duplicates
+                            const alreadyFound = pageDetections.all.some(d =>
+                                d.startIndex === pos && d.value.length === searchVal.length
+                            );
+
+                            if (!alreadyFound && (!Detector.shouldExclude || !Detector.shouldExclude(searchVal, pos, combinedText))) {
+                                pageDetections.all.push({
+                                    type: item.type, // Map 'name', 'email', etc.
+                                    name: 'AI: ' + (item.type.charAt(0).toUpperCase() + item.type.slice(1)),
+                                    icon: '🤖',
+                                    value: combinedText.substr(pos, searchVal.length), // Use actual text from doc
+                                    page: i,
+                                    startIndex: pos,
+                                    endIndex: pos + searchVal.length,
+                                    selected: true,
+                                    confidence: item.confidence
+                                });
+                            }
+                        }
+                    }
+
+                    // Group AI items into categories
+                    // pageDetections.byCategory needs update
+                    const categories = {};
+                    pageDetections.all.forEach(det => {
+                        const catKey = det.type;
+                        if (!categories[catKey]) {
+                            categories[catKey] = {
+                                name: det.name || det.type,
+                                icon: det.icon || '🔹',
+                                items: []
+                            };
+                        }
+                        categories[catKey].items.push(det);
+                    });
+                    pageDetections.byCategory = categories;
+
+                } catch (err) {
+                    console.error("AI Error on page " + i, err);
+                    // Continue with regex results
+                }
+            }
+
+            // Get bounds for all detections (Regex + AI)
             for (const detection of pageDetections.all) {
                 const bounds = this.findTextBounds(detection.value, detection.startIndex, textItems, viewport);
                 if (bounds) {
@@ -1124,7 +1200,7 @@ const App = {
                 }
             }
 
-            // Merge results
+            // Merge results into global object
             for (const [category, data] of Object.entries(pageDetections.byCategory)) {
 
                 if (data.items.length === 0) continue;
@@ -1173,13 +1249,14 @@ const App = {
      * Find bounding box for detected text
      */
     findTextBounds(searchValue, startIndex, textItems, viewport) {
+        if (!searchValue || searchValue.trim().length < 2) return null;
+
         let minX = Infinity, minY = Infinity;
         let maxX = -Infinity, maxY = -Infinity;
         let found = false;
 
-        const searchLower = searchValue.toLowerCase().trim();
-        if (searchLower.length < 2) return null;
-
+        // 1. Map text items to their positions in the full text string
+        // This MUST match exactly how 'runDetection' builds the string for the Detector
         let fullText = '';
         const itemPositions = [];
 
@@ -1188,52 +1265,39 @@ const App = {
             const startPos = fullText.length;
             fullText += item.str;
             const endPos = fullText.length;
+
+            // Store the range this item covers in the full text
             itemPositions.push({ startPos, endPos, item });
-            fullText += ' ';
+
+            fullText += ' '; // Add space between items (same as runDetection)
         }
 
-        const fullTextLower = fullText.toLowerCase();
-        const matchIndex = fullTextLower.indexOf(searchLower);
+        // 2. Identify text items that are part of the detected range [startIndex, endIndex]
+        const endIndex = startIndex + searchValue.length;
 
-        if (matchIndex !== -1) {
-            const matchEnd = matchIndex + searchLower.length;
+        for (const pos of itemPositions) {
+            // Check for overlap: 
+            // Item ends after start of match AND Item starts before end of match
+            if (pos.endPos > startIndex && pos.startPos < endIndex) {
+                found = true;
+                const item = pos.item;
 
-            for (const pos of itemPositions) {
-                if (pos.endPos > matchIndex && pos.startPos < matchEnd) {
-                    found = true;
-                    const item = pos.item;
-                    const x = item.x;
-                    const fontHeight = item.fontHeight || 12;
-                    const y = item.y - fontHeight;
-                    const width = item.width || (item.str.length * fontHeight * 0.6);
-                    const height = fontHeight;
+                // Use the item's geometry
+                const x = item.x;
+                const fontHeight = item.fontHeight || 12;
+                // PDF coordinates are usually bottom-left, verify if y needs adjustment
+                // Standard PDF.js: y is bottom coordinate of baseline.
+                // We want key bounds.
+                const y = item.y - fontHeight; // Top Y (approx)
 
-                    minX = Math.min(minX, x);
-                    minY = Math.min(minY, y);
-                    maxX = Math.max(maxX, x + width);
-                    maxY = Math.max(maxY, y + height);
-                }
-            }
-        }
+                // Calculate width: use provided width or fallback estimate
+                const width = item.width || (item.str.length * fontHeight * 0.6);
+                const height = fontHeight;
 
-        if (!found) {
-            for (let i = 0; i < textItems.length; i++) {
-                const item = textItems[i];
-                const itemText = item.str.toLowerCase().trim();
-
-                if (itemText.length >= 3 && itemText.includes(searchLower)) {
-                    found = true;
-                    const x = item.x;
-                    const fontHeight = item.fontHeight || 12;
-                    const y = item.y - fontHeight;
-                    const width = item.width || (item.str.length * fontHeight * 0.6);
-                    const height = fontHeight;
-
-                    minX = Math.min(minX, x);
-                    minY = Math.min(minY, y);
-                    maxX = Math.max(maxX, x + width);
-                    maxY = Math.max(maxY, y + height);
-                }
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x + width);
+                maxY = Math.max(maxY, y + height);
             }
         }
 
@@ -1277,6 +1341,27 @@ const App = {
         `;
 
         for (const [category, data] of Object.entries(detections.byCategory)) {
+            // Group items by value (normalized)
+            const groups = {};
+            data.items.forEach(item => {
+                const key = item.value.trim();
+                if (!groups[key]) {
+                    groups[key] = {
+                        value: item.value, // Keep original
+                        count: 0,
+                        items: [],
+                        selected: item.selected !== false
+                    };
+                }
+                groups[key].count++;
+                groups[key].items.push(item);
+                // If any item in group is unselected by default, unselect group?
+                // Or if any is selected, select group?
+                // Let's bias towards initial detection state.
+            });
+
+            const sortedKeys = Object.keys(groups).sort();
+
             html += `
                 <div class="detection-category">
                     <div class="detection-category-header">
@@ -1286,16 +1371,24 @@ const App = {
                         <span class="detection-count">${data.items.length}</span>
                     </div>
                     <div class="detection-category-items">
-                        ${data.items.map((item, idx) => `
+                        ${sortedKeys.map((key, idx) => {
+                const group = groups[key];
+                const pages = [...new Set(group.items.map(i => i.page))].sort((a, b) => a - b).join(', ');
+                const countLabel = group.count > 1 ? `<span style="font-size:0.8em; color:var(--text-muted);">(${group.count}x)</span>` : '';
+
+                return `
                             <label class="detection-check-item">
                                 <input type="checkbox" 
                                        data-category="${category}" 
-                                       data-index="${idx}"
-                                       ${item.selected !== false ? 'checked' : ''}>
-                                <span class="value">${this.maskValue(item.value)}</span>
-                                <span class="page">P${item.page}</span>
+                                       data-value="${this.escapeRegex(key)}"
+                                       ${group.selected ? 'checked' : ''}>
+                                <div style="display:flex; flex-direction:column; line-height:1.2;">
+                                    <span class="value">${this.maskValue(group.value)} ${countLabel}</span>
+                                    <span class="page" style="font-size:0.75rem;">P${pages}</span>
+                                </div>
                             </label>
-                        `).join('')}
+                        `;
+            }).join('')}
                     </div>
                 </div>
             `;

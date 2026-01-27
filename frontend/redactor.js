@@ -258,17 +258,7 @@ const Redactor = {
         };
     },
 
-    /**
-     * Convert coordinates from PDF space to canvas space
-     */
-    pdfToCanvasCoords(pdfBounds, pageHeight, scale) {
-        return {
-            x: pdfBounds.x * scale,
-            y: (pageHeight - pdfBounds.y - pdfBounds.height) * scale,
-            width: pdfBounds.width * scale,
-            height: pdfBounds.height * scale
-        };
-    },
+
 
     // ==================== UNDO / REDO HISTORY ====================
     history: [],
