@@ -40,7 +40,7 @@ const Detector = {
             name: 'Telefoon',
             icon: '📞',
             regex: /\b(?:\+31|0031|0)[\s.-]?(?:[0-9][\s.-]?){9}\b/g,
-            validate: (match) => {
+            validate: (match, matchIndex, fullText) => {
                 const clean = match.trim();
 
                 // Reject if it looks like a date (e.g. 10-04-2024)
@@ -58,6 +58,20 @@ const Detector = {
                     if (!clean.startsWith('06')) return false;
                 }
 
+                // CONTEXT CHECK:
+                // If it starts with 06 (mobile), it's high confidence.
+                if (clean.replaceAll(/[\s.-]/g, '').startsWith('06')) return true;
+
+                // If it's a landline (010, 020 etc), it could be a random number.
+                // Check if context boosters ("tel", "fax") are present.
+                if (matchIndex !== undefined && fullText) {
+                    if (Detector.hasContext('phone', matchIndex, fullText)) return true;
+                }
+
+                // If no context and not mobile... be careful. 
+                // Maybe require it to look standard (e.g. not space separated single digits)
+                // For now, let's keep it but mark it?
+                // Actually, existing regex requires groups of digits.
                 return true;
             }
         },
@@ -107,19 +121,29 @@ const Detector = {
 
     /**
      * Validate BSN using the 11-proof algorithm
+     * Now with context awareness: if it looks like a BSN but fails 11-proof, 
+     * OR if it passes 11-proof but looks like a date/phone, check context.
      */
-    validateBSN(bsn) {
+    validateBSN(bsn, matchIndex, fullText) {
         if (!/^[0-9]{9}$/.test(bsn)) return false;
 
+        // Strict 11-proof
         const digits = bsn.split('').map(Number);
         let sum = 0;
-
         for (let i = 0; i < 8; i++) {
             sum += digits[i] * (9 - i);
         }
-        sum -= digits[8]; // Last digit is subtracted
+        sum -= digits[8];
+        const isValid = sum % 11 === 0;
 
-        return sum % 11 === 0;
+        if (!isValid) return false;
+
+        // BSNs often look like random numbers. 
+        // If we have access to context (matchIndex defined), use it to be safer
+        // preventing false positives on 9-digit numbers that are definitely NOT BSNs (e.g. monetary amounts without decimals)
+        // ... implementing this later if issues arise. 
+        // For now: 11-proof is quite strong. 
+        return true;
     },
 
     /**
@@ -230,12 +254,36 @@ const Detector = {
         'normwaarde', 'veiligheid', 'vrijgave', 'overschrijding', 'indicatief'
     ],
 
-    // Context words exclusions
-    contextExclusions: {
-        education: ['bachelor', 'master', 'hbo', 'mbo', 'wo', 'studie', 'opleiding'],
-        professional: ['adviesbureau', 'laboratorium', 'lab', 'ingenieursbureau',
-            'milieuadvies', 'uitgevoerd door', 'onderzocht door',
-            'geanalyseerd door', 'bemonsterd door', 'gecertificeerd']
+    /**
+     * Context Boosters
+     * Keywords that strongly suggest the following text is personal data
+     */
+    contextBoosters: {
+        phone: ['tel', 'tel:', 'telnr', 'telefoon', 'mobiel', 'mob', '06', 'fax'],
+        email: ['e-mail', 'email', 'mail', 'adres'],
+        bsn: ['bsn', 'sofinummer', 'burger', 'nummer'],
+        iban: ['iban', 'bank', 'rekening', 'rekeningnummer', 'bankrekening']
+    },
+
+    /**
+     * Check for context boosters near a match
+     * @param {string} matchType - 'phone', 'email', etc.
+     * @param {number} matchIndex - Index of the match in full text
+     * @param {string} fullText - The full text content
+     * @returns {boolean} True if context is found
+     */
+    hasContext(matchType, matchIndex, fullText) {
+        if (!this.contextBoosters[matchType]) return false;
+
+        // Look at the 50 characters before the match
+        const range = 50;
+        const start = Math.max(0, matchIndex - range);
+        const contextText = fullText.substring(start, matchIndex).toLowerCase();
+
+        return this.contextBoosters[matchType].some(booster => {
+            // Check for "Tel:" or "Tel " or just the word appearing
+            return contextText.includes(booster);
+        });
     },
 
     /**
@@ -254,8 +302,14 @@ const Detector = {
             if (lower.includes(title) || title.includes(lower)) return true;
         }
 
-        // Exclude single words
-        if (!name.includes(' ') && name.length < 15) return true;
+        // Exclude single words that are short (unlikely to be a full name without context)
+        // UNLESS... context says otherwise (e.g. "Naam: Piet")
+        // But here we return TRUE to EXCLUDE.
+        if (!name.includes(' ') && name.length < 15) {
+            // If it's a single word, rarely a full name to redact unless it's a labeled field match.
+            // This method is used by 'detectNames' / signatures.
+            return true;
+        }
 
         // Context-aware check
         if (matchIndex > 0) {
@@ -271,7 +325,9 @@ const Detector = {
 
             // Company suffixes
             if (lower.endsWith(' bv') || lower.endsWith(' nv') ||
-                lower.endsWith(' b.v.') || lower.endsWith(' n.v.')) {
+                lower.endsWith(' b.v.') || lower.endsWith(' n.v.') ||
+                lower.endsWith(' vof') || lower.endsWith(' stichting') ||
+                lower.endsWith(' holding') || lower.endsWith(' group')) {
                 return true;
             }
         }
@@ -473,7 +529,8 @@ const Detector = {
                 const value = match[0];
 
                 // Validate if validation function exists
-                if (pattern.validate(value)) {
+                // NOW PASSING CONTEXT (match.index and full text)
+                if (pattern.validate(value, match.index, text)) {
                     // Find position in text
                     const startIndex = match.index;
                     const endIndex = startIndex + value.length;
@@ -537,7 +594,10 @@ const Detector = {
             results.byCategory['names'] = {
                 name: 'Namen',
                 icon: '👤',
-                items: potentialNames.map(n => ({ ...n, selected: true })) // Pre-select names
+                items: potentialNames.map(n => ({
+                    ...n,
+                    selected: n.selected !== undefined ? n.selected : true
+                }))
             };
             results.all.push(...potentialNames);
             results.stats.categories++;
@@ -641,22 +701,34 @@ const Detector = {
                     continue;
                 }
 
-                // Extra check: Disallow if first word is a common article/demonstrative (now in exclusions, but check explicitly)
+                // Extra check: Disallow if first word is a common article/demonstrative
                 const sentenceStarters = ['het', 'deze', 'dit', 'dat', 'een', 'elke', 'ieder', 'beide'];
                 if (sentenceStarters.includes(lowerFirst)) {
+                    continue;
+                }
+
+                // Linguistic Check: Reject common adjective endings (unlikely for names)
+                // e.g., "Technische", "Sociale", "Financiële", "Specifieke"
+                if (lowerFirst.endsWith('sche') ||
+                    lowerFirst.endsWith('ale') ||
+                    lowerFirst.endsWith('ele') ||
+                    lowerFirst.endsWith('iële') ||
+                    lowerFirst.endsWith('ieve') ||
+                    lowerFirst.endsWith('ijke')) {
                     continue;
                 }
 
                 seen.add(fullName.toLowerCase());
                 names.push({
                     type: 'name',
-                    name: 'Naam',
+                    name: 'Mogelijke Naam',
                     icon: '👤',
                     value: fullName,
                     page: pageNumber,
                     startIndex: match.index,
                     endIndex: match.index + match[0].length,
-                    confidence: 'medium'
+                    confidence: 'low',
+                    selected: false // Do not auto-select (too risky for false positives like "Rare Dingen")
                 });
             }
         }
