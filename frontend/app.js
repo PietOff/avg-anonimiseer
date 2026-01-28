@@ -121,11 +121,11 @@ const App = {
             e.preventDefault();
             this.elements.uploadZone.classList.remove('drag-over');
             const file = e.dataTransfer.files[0];
-            if (file) this.loadDocument(file);
+            if (file) this.loadFile(file);
         });
 
         this.elements.fileInput.addEventListener('change', (e) => {
-            if (e.target.files[0]) this.loadDocument(e.target.files[0]);
+            if (e.target.files[0]) this.loadFile(e.target.files[0]);
         });
         this.elements.browseBtn.addEventListener('click', (e) => {
             e.stopPropagation();
