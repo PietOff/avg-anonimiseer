@@ -1035,6 +1035,20 @@ const App = {
             return;
         }
 
+        // Group by value
+        const groups = {};
+        const singles = [];
+
+        redactions.forEach(r => {
+            if (r.value && r.value.trim().length > 0) {
+                const key = r.value.trim();
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(r);
+            } else {
+                singles.push(r);
+            }
+        });
+
         let html = `
             <div class="redactions-header">
                 <span>${redactions.length} redactie(s)</span>
@@ -1042,10 +1056,11 @@ const App = {
             </div>
         `;
 
-        html += redactions.map(r => `
+        // Render Singles (Manual/No Value)
+        html += singles.map(r => `
             <div class="redaction-item" data-id="${r.id}" data-page="${r.pageNumber}">
                 <div class="redaction-info">
-                    <span class="type">${r.type === 'manual' ? '✏️' : '🔍'}</span>
+                    <span class="type">✏️</span>
                     <span class="value">${r.value || 'Handmatig'}</span>
                     <span class="page">P${r.pageNumber}</span>
                 </div>
@@ -1053,23 +1068,72 @@ const App = {
             </div>
         `).join('');
 
-        this.elements.redactionsList.innerHTML = html;
+        // Render Groups
+        Object.keys(groups).sort().forEach(key => {
+            const group = groups[key];
+            const count = group.length;
+            const pages = [...new Set(group.map(r => r.pageNumber))].sort((a, b) => a - b).join(', ');
 
-        // Click to scroll to page
-        this.elements.redactionsList.querySelectorAll('.redaction-info').forEach(info => {
-            info.addEventListener('click', () => {
-                const item = info.closest('.redaction-item');
-                this.goToPage(parseInt(item.dataset.page));
-            });
+            // Use encoding for safety
+            const safeKey = encodeURIComponent(key);
+
+            html += `
+                <div class="redaction-item group-item" data-value="${safeKey}">
+                    <div class="redaction-info">
+                        <span class="type">🗂️</span>
+                        <div style="flex:1">
+                            <span class="value" title="${key}">${this.maskValue(key)}</span>
+                            ${count > 1 ? `<span style="font-size:0.8em; color:var(--text-muted); margin-left:4px;">(${count}x)</span>` : ''}
+                        </div>
+                        <span class="page" style="font-size:0.75rem;">P${pages}</span>
+                    </div>
+                    <button class="btn-delete-group" data-value="${safeKey}" title="Verwijder alle ${count}">✕</button>
+                </div>
+            `;
         });
 
-        // Delete button
+        this.elements.redactionsList.innerHTML = html;
+
+        // Event Listeners for Singles
         this.elements.redactionsList.querySelectorAll('.btn-delete-redaction').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 Redactor.removeRedaction(btn.dataset.id);
                 this.renderAllRedactions();
                 this.updateRedactionsList();
+            });
+        });
+
+        // Event Listeners for Groups (Delete All)
+        this.elements.redactionsList.querySelectorAll('.btn-delete-group').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const value = decodeURIComponent(btn.dataset.value);
+                if (confirm(`Alle ${groups[value].length} instanties van "${value}" verwijderen?`)) {
+                    this.removeRedactionGlobally(value);
+                    this.renderAllRedactions();
+                    this.updateRedactionsList();
+                }
+            });
+        });
+
+        // Single Item Click (Scroll)
+        this.elements.redactionsList.querySelectorAll('.redaction-item:not(.group-item) .redaction-info').forEach(info => {
+            info.addEventListener('click', () => {
+                const item = info.closest('.redaction-item');
+                this.goToPage(parseInt(item.dataset.page));
+            });
+        });
+
+        // Group Item Click (Scroll to first?)
+        this.elements.redactionsList.querySelectorAll('.group-item .redaction-info').forEach(info => {
+            info.addEventListener('click', () => {
+                const item = info.closest('.group-item');
+                const value = decodeURIComponent(item.dataset.value);
+                const firstInstance = groups[value][0];
+                if (firstInstance) {
+                    this.goToPage(firstInstance.pageNumber);
+                }
             });
         });
 
