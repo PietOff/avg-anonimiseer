@@ -409,7 +409,11 @@ const App = {
                 this.currentRedactionLayer.style.pointerEvents = 'none';
 
                 if (bounds.width > 5 && bounds.height > 5) {
-                    const pageHeight = 842;
+                    // Get actual page height for correct coordinate conversion
+                    const page = await this.pdfDoc.getPage(pageNum);
+                    const viewport = page.getViewport({ scale: 1.0 });
+                    const pageHeight = viewport.height;
+
                     const pdfBounds = Redactor.canvasToPdfCoords(bounds, pageHeight, this.scale);
 
                     // Add redaction immediately
@@ -1082,7 +1086,7 @@ const App = {
                     <div class="redaction-info">
                         <span class="type">🗂️</span>
                         <div style="flex:1">
-                            <span class="value" title="${key}">${this.maskValue(key)}</span>
+                            <span class="value" title="${key}">${key}</span>
                             ${count > 1 ? `<span style="font-size:0.8em; color:var(--text-muted); margin-left:4px;">(${count}x)</span>` : ''}
                         </div>
                         <span class="page" style="font-size:0.75rem;">P${pages}</span>
@@ -1469,7 +1473,7 @@ const App = {
                                        data-value="${encodeURIComponent(key)}"
                                        ${group.selected ? 'checked' : ''}>
                                 <div style="display:flex; flex-direction:column; line-height:1.2;">
-                                    <span class="value">${this.maskValue(group.value)} ${countLabel}</span>
+                                    <span class="value">${group.value} ${countLabel}</span>
                                     <span class="page" style="font-size:0.75rem;">P${pages}</span>
                                 </div>
                             </label>
