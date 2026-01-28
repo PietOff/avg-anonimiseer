@@ -18,7 +18,7 @@ fi
 
 # Start Backend
 echo "🤖 Starting Backend (Port 8000)..."
-export MISTRAL_API_KEY="RjhyR0eAckefARBT6V2x88nPAIBlk961"
+export MISTRAL_API_KEY="YOUR_API_KEY_HERE"
 cd backend
 uvicorn main:app --reload --port 8000 &
 BACKEND_PID=$!
