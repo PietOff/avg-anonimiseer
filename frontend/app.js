@@ -474,51 +474,32 @@ const App = {
     },
 },
 
-/**
- * Render redactions on ALL pages
- * (Re-adding this method if it was lost or cut off)
- */
-if (typeof Detector !== 'undefined' && Detector.learnWord) {
-    Detector.learnWord(fullText);
-}
-console.log('Learned word from manual redaction:', fullText);
 
-// FEATURE: Global Redaction (Apply to all)
-// If the word is significant (>3 chars), try to find and redact it everywhere else
-if (fullText.length > 3) {
-    this.applyRedactionGlobally(fullText);
-}
-}
-console.log('Learned word from manual redaction:', fullText);
-        } catch (error) {
-    console.error('Error learning from redaction:', error);
-}
+
+    /**
+     * Update current page based on scroll position
+     */
+    updateCurrentPageFromScroll() {
+        const container = this.elements.pdfViewer;
+        const scrollTop = container.scrollTop;
+
+        for (let i = 0; i < this.pageContainers.length; i++) {
+            const pageWrapper = this.pageContainers[i];
+            const offsetTop = pageWrapper.offsetTop - container.offsetTop;
+            const offsetBottom = offsetTop + pageWrapper.offsetHeight;
+
+            if (scrollTop >= offsetTop - 100 && scrollTop < offsetBottom - 100) {
+                this.currentPage = i + 1;
+                this.elements.currentPageEl.textContent = this.currentPage;
+                break;
+            }
+        }
     },
 
-/**
- * Update current page based on scroll position
- */
-updateCurrentPageFromScroll() {
-    const container = this.elements.pdfViewer;
-    const scrollTop = container.scrollTop;
-
-    for (let i = 0; i < this.pageContainers.length; i++) {
-        const pageWrapper = this.pageContainers[i];
-        const offsetTop = pageWrapper.offsetTop - container.offsetTop;
-        const offsetBottom = offsetTop + pageWrapper.offsetHeight;
-
-        if (scrollTop >= offsetTop - 100 && scrollTop < offsetBottom - 100) {
-            this.currentPage = i + 1;
-            this.elements.currentPageEl.textContent = this.currentPage;
-            break;
-        }
-    }
-},
-
-/**
- * Render redactions on ALL pages
- */
-renderAllRedactions() {
+        /**
+         * Render redactions on ALL pages
+         */
+        renderAllRedactions() {
     // Clear all redaction layers first
     document.querySelectorAll('.page-redaction-layer').forEach(layer => {
         layer.innerHTML = '';
