@@ -1827,7 +1827,7 @@ const App = {
             <span class="type">${item.icon || '🔹'} ${item.name}</span><br>
                 <span class="value" title="${item.value}">${this.maskValue(item.value)}</span>
         </div>
-                    </div >
+                    </div>
     `;
                 });
                 if (allItems.length > 50) {
@@ -1840,7 +1840,7 @@ const App = {
             <p style="font-size: 0.85rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
                 <strong>${this.currentDetections.stats.total} gevonden</strong> (${applied} toegepast)
                 ${learnedInfo}
-            </p >
+            </p>
     ${itemsHtml}
 `;
         },
