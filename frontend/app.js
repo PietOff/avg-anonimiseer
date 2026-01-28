@@ -1361,53 +1361,17 @@ const App = {
         });
     },
     // End of updateRedactionsList
-},
 
-    // Sort the entire list by the position of the representative item
-    displayItems.sort((a, b) => {
-        const ra = a.representative;
-        const rb = b.representative;
-
-        if (ra.pageNumber !== rb.pageNumber) return ra.pageNumber - rb.pageNumber;
-        // PDF: Y=0 is bottom. Reading order is Top (High Y) -> Bottom (Low Y)
-        if (Math.abs(ra.bounds.y - rb.bounds.y) > 5) return rb.bounds.y - ra.bounds.y;
-        return ra.bounds.x - rb.bounds.x;
-    });
-
-// Render sorted items
-displayItems.forEach(obj => {
-    if (obj.type === 'single') {
-        const r = obj.item;
-        html += `
-                    <div class="redaction-item" data-id="${r.id}" data-page="${r.pageNumber}">
-                        <div class="redaction-info">
-                            <span class="type">✏️</span>
-                            <span class="value">${r.value || 'Handmatig'}</span>
-                            <span class="page">P${r.pageNumber}</span>
-                        </div>
-                        <button class="btn-delete-redaction" data-id="${r.id}" title="Verwijder">✕</button>
-                    </div>
-                `;
-    } else {
-        const group = obj.items;
-        const count = group.length;
-        const key = obj.key;
-        const pages = [...new Set(group.map(r => r.pageNumber))].sort((a, b) => a - b).join(', ');
-        const safeKey = encodeURIComponent(key);
-
-        html += `
-                    <div class="redaction-item group-item" data-value="${safeKey}">
-                        <div class="redaction-info">
-                            <span class="type">🗂️</span>
+                            < span class="type" >🗂️</span >
                             <div style="flex:1">
                                 <span class="value" title="${key}">${key}</span>
                                 ${count > 1 ? `<span style="font-size:0.8em; color:var(--text-muted); margin-left:4px;">(${count}x)</span>` : ''}
                             </div>
                             <span class="page" style="font-size:0.75rem;">P${pages}</span>
-                        </div>
-                        <button class="btn-delete-group" data-value="${safeKey}" title="Verwijder alle ${count}">✕</button>
-                    </div>
-                `;
+                        </div >
+    <button class="btn-delete-group" data-value="${safeKey}" title="Verwijder alle ${count}">✕</button>
+                    </div >
+    `;
     }
 });
 
@@ -1428,7 +1392,7 @@ this.elements.redactionsList.querySelectorAll('.btn-delete-group').forEach(btn =
     btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const value = decodeURIComponent(btn.dataset.value);
-        if (confirm(`Alle ${groups[value].length} instanties van "${value}" verwijderen?`)) {
+        if (confirm(`Alle ${ groups[value].length } instanties van "${value}" verwijderen ? `)) {
             this.removeRedactionGlobally(value);
             this.renderAllRedactions();
             this.updateRedactionsList();
@@ -1723,24 +1687,24 @@ displayDetectionResults(detections) {
 
     if (detections.stats.total === 0) {
         this.elements.detectionResults.innerHTML = `
-                <div style="text-align: center; padding: 2rem;">
+    < div style = "text-align: center; padding: 2rem;" >
                     <p style="font-size: 3rem; margin-bottom: 1rem;">✅</p>
                     <p>Geen persoonsgegevens gedetecteerd!</p>
                     <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.5rem;">
                         Tip: Teken handmatig een redactie om het systeem te leren.
                     </p>
-                </div>
-            `;
+                </div >
+    `;
         return;
     }
 
     this.elements.btnApplyDetections.classList.remove('hidden');
 
     let html = `
-            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
-                ${detections.stats.total} item(s) gevonden in ${detections.stats.categories} categorie(ën)
-            </p>
-        `;
+    < p style = "margin-bottom: 1rem; color: var(--text-secondary);" >
+        ${ detections.stats.total } item(s) gevonden in ${ detections.stats.categories } categorie(ën)
+            </p >
+    `;
 
     for (const [category, data] of Object.entries(detections.byCategory)) {
         // Group items by value (normalized)
@@ -1765,7 +1729,7 @@ displayDetectionResults(detections) {
         const sortedKeys = Object.keys(groups).sort();
 
         html += `
-                <div class="detection-category">
+    < div class="detection-category" >
                     <div class="detection-category-header">
                         <span class="detection-category-title">
                             ${data.icon} ${data.name}
@@ -1798,8 +1762,8 @@ displayDetectionResults(detections) {
                         `;
         }).join('')}
                     </div>
-                </div>
-            `;
+                </div >
+    `;
     }
 
     this.elements.detectionResults.innerHTML = html;
@@ -1883,10 +1847,10 @@ updateDetectionsList() {
         const ignoredCount = Detector.getIgnoredWords ? Detector.getIgnoredWords().size : 0;
 
         if (learnedCount > 0) {
-            learnedInfo = `<br><small>🧠 ${learnedCount} geleerd</small>`;
+            learnedInfo = `< br > <small>🧠 ${learnedCount} geleerd</small>`;
         }
         if (ignoredCount > 0) {
-            learnedInfo += `<br><small>🚫 ${ignoredCount} genegeerd</small>`;
+            learnedInfo += `< br > <small>🚫 ${ignoredCount} genegeerd</small>`;
         }
 
         // Show/hide clear button
@@ -1915,27 +1879,27 @@ updateDetectionsList() {
             const isIgnored = Detector.shouldIgnore ? Detector.shouldIgnore(item.value) : false;
             const style = isIgnored ? 'opacity: 0.5; text-decoration: line-through;' : '';
             itemsHtml += `
-                    <div class="detection-item" style="${style}">
-                        <div style="flex:1; overflow:hidden;">
-                            <span class="type">${item.icon || '🔹'} ${item.name}</span><br>
-                            <span class="value" title="${item.value}">${this.maskValue(item.value)}</span>
-                        </div>
-                    </div>
-                `;
+    < div class="detection-item" style = "${style}" >
+        <div style="flex:1; overflow:hidden;">
+            <span class="type">${item.icon || '🔹'} ${item.name}</span><br>
+                <span class="value" title="${item.value}">${this.maskValue(item.value)}</span>
+        </div>
+                    </div >
+    `;
         });
         if (allItems.length > 50) {
-            itemsHtml += `<div class="detection-item" style="justify-content:center; color:var(--text-muted)">...en nog ${allItems.length - 50} items</div>`;
+            itemsHtml += `< div class="detection-item" style = "justify-content:center; color:var(--text-muted)" >...en nog ${ allItems.length - 50 } items</div > `;
         }
         itemsHtml += '</div>';
     }
 
     this.elements.detectionsList.innerHTML = `
-            <p style="font-size: 0.85rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
-                <strong>${this.currentDetections.stats.total} gevonden</strong> (${applied} toegepast)
-                ${learnedInfo}
-            </p>
-            ${itemsHtml}
-        `;
+    < p style = "font-size: 0.85rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;" >
+        <strong>${this.currentDetections.stats.total} gevonden</strong> (${ applied } toegepast)
+                ${ learnedInfo }
+            </p >
+    ${ itemsHtml }
+`;
 },
 
     /**
