@@ -1360,19 +1360,19 @@ const App = {
             list.appendChild(item);
         });
     },
-});
-        });
+    // End of updateRedactionsList
+},
 
-// Sort the entire list by the position of the representative item
-displayItems.sort((a, b) => {
-    const ra = a.representative;
-    const rb = b.representative;
+    // Sort the entire list by the position of the representative item
+    displayItems.sort((a, b) => {
+        const ra = a.representative;
+        const rb = b.representative;
 
-    if (ra.pageNumber !== rb.pageNumber) return ra.pageNumber - rb.pageNumber;
-    // PDF: Y=0 is bottom. Reading order is Top (High Y) -> Bottom (Low Y)
-    if (Math.abs(ra.bounds.y - rb.bounds.y) > 5) return rb.bounds.y - ra.bounds.y;
-    return ra.bounds.x - rb.bounds.x;
-});
+        if (ra.pageNumber !== rb.pageNumber) return ra.pageNumber - rb.pageNumber;
+        // PDF: Y=0 is bottom. Reading order is Top (High Y) -> Bottom (Low Y)
+        if (Math.abs(ra.bounds.y - rb.bounds.y) > 5) return rb.bounds.y - ra.bounds.y;
+        return ra.bounds.x - rb.bounds.x;
+    });
 
 // Render sorted items
 displayItems.forEach(obj => {
