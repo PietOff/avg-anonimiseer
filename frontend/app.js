@@ -700,6 +700,23 @@ const App = {
                     }
                 });
 
+                // Bidirectional Highlighting
+                box.addEventListener('click', (e) => {
+                    if (e.target === box || e.target.classList.contains('redaction-resize-handle')) {
+                        e.stopPropagation();
+
+                        // 1. Remove highlight from all items
+                        document.querySelectorAll('.redaction-item').forEach(el => el.classList.remove('selected'));
+
+                        // 2. Find and highlight sidebar item
+                        const sidebarItem = document.querySelector(`.redaction-item[data-id="${redaction.id}"]`);
+                        if (sidebarItem) {
+                            sidebarItem.classList.add('selected');
+                            sidebarItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }
+                });
+
                 redactionLayer.appendChild(box);
             }
         }
@@ -1273,80 +1290,95 @@ const App = {
      * Update redactions list in sidebar
      */
     updateRedactionsList() {
+        const list = this.elements.redactionsList;
+        list.innerHTML = '';
+
         const redactions = Redactor.getAllRedactions();
 
         if (redactions.length === 0) {
-            this.elements.redactionsList.innerHTML = '<p class="empty-state">Nog geen redacties toegevoegd</p>';
+            list.innerHTML = '<p class="empty-state">Nog geen redacties toegevoegd</p>';
             return;
         }
 
-        // Group by value
-        const groups = {};
-        const singles = [];
+        // Sort by page number then Y position
+        redactions.sort((a, b) => {
+            if (a.page !== b.page) return a.page - b.page;
+            return a.bounds.y - b.bounds.y;
+        });
 
         redactions.forEach(r => {
-            if (r.value && r.value.trim().length > 0) {
-                const key = r.value.trim();
-                if (!groups[key]) groups[key] = [];
-                groups[key].push(r);
-            } else {
-                singles.push(r);
-            }
-        });
+            const item = document.createElement('div');
+            item.className = 'redaction-item';
+            item.dataset.id = r.id; // Crucial for bidirectional highlighting
 
-        let html = `
-            <div class="redactions-header">
-                <span>${redactions.length} redactie(s)</span>
-                <button class="btn-clear-all" title="Wis alle redacties">🗑️ Wis alle</button>
-            </div>
-        `;
+            // Determine display text
+            let displayText = r.value || (r.type === 'manual' ? 'Handmatige selectie' : 'Gedetecteerd item');
+            let icon = '✏️';
 
-        // Render Groups
-        const displayItems = [];
+            if (r.type !== 'manual') icon = '🔍';
+            if (r.value) icon = '📝'; // Icon for text-based redactions
 
-        // Add groups to displayItems
-        Object.keys(groups).forEach(key => {
-            const items = groups[key];
-            // Sort items inside the group to find the "first" one visually
-            items.sort((a, b) => { // Page ASC, Y DESC (top to bottom), X ASC
-                if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber;
-                if (Math.abs(a.bounds.y - b.bounds.y) > 5) return b.bounds.y - a.bounds.y;
-                return a.bounds.x - b.bounds.x;
+            item.innerHTML = `
+                <div style="display:flex; flex-direction:column; gap:2px;">
+                    <span style="font-weight:500; font-size: 0.9em;">
+                        ${icon} ${displayText.length > 25 ? displayText.substring(0, 25) + '...' : displayText}
+                    </span>
+                    <span class="type">Pagina ${r.page} • ${r.type}</span>
+                </div>
+                <button class="btn-delete-redaction" title="Verwijder">✕</button>
+            `;
+
+            // Click to scroll to redaction
+            item.addEventListener('click', () => {
+                this.goToPage(r.page);
+                setTimeout(() => {
+                    const box = document.querySelector(`.redaction-box[data-id="${r.id}"]`);
+                    if (box) {
+                        box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        // Remove highlight from others
+                        document.querySelectorAll('.redaction-box').forEach(el => el.style.boxShadow = '');
+                        // Add highlight
+                        box.style.boxShadow = '0 0 0 4px var(--accent-warning)';
+                        setTimeout(() => box.style.boxShadow = '', 2000);
+                    }
+                }, 100);
             });
 
-            displayItems.push({
-                type: 'group',
-                key: key,
-                items: items,
-                representative: items[0]
+            // Delete button
+            const deleteBtn = item.querySelector('.btn-delete-redaction');
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (r.value) {
+                    this.removeRedactionGlobally(r.value);
+                } else {
+                    Redactor.removeRedaction(r.id);
+                }
+                this.renderAllRedactions();
+                this.updateRedactionsList();
             });
+
+            list.appendChild(item);
+        });
+    },
+});
         });
 
-        // Add singles to displayItems
-        singles.forEach(r => {
-            displayItems.push({
-                type: 'single',
-                item: r,
-                representative: r
-            });
-        });
+// Sort the entire list by the position of the representative item
+displayItems.sort((a, b) => {
+    const ra = a.representative;
+    const rb = b.representative;
 
-        // Sort the entire list by the position of the representative item
-        displayItems.sort((a, b) => {
-            const ra = a.representative;
-            const rb = b.representative;
+    if (ra.pageNumber !== rb.pageNumber) return ra.pageNumber - rb.pageNumber;
+    // PDF: Y=0 is bottom. Reading order is Top (High Y) -> Bottom (Low Y)
+    if (Math.abs(ra.bounds.y - rb.bounds.y) > 5) return rb.bounds.y - ra.bounds.y;
+    return ra.bounds.x - rb.bounds.x;
+});
 
-            if (ra.pageNumber !== rb.pageNumber) return ra.pageNumber - rb.pageNumber;
-            // PDF: Y=0 is bottom. Reading order is Top (High Y) -> Bottom (Low Y)
-            if (Math.abs(ra.bounds.y - rb.bounds.y) > 5) return rb.bounds.y - ra.bounds.y;
-            return ra.bounds.x - rb.bounds.x;
-        });
-
-        // Render sorted items
-        displayItems.forEach(obj => {
-            if (obj.type === 'single') {
-                const r = obj.item;
-                html += `
+// Render sorted items
+displayItems.forEach(obj => {
+    if (obj.type === 'single') {
+        const r = obj.item;
+        html += `
                     <div class="redaction-item" data-id="${r.id}" data-page="${r.pageNumber}">
                         <div class="redaction-info">
                             <span class="type">✏️</span>
@@ -1356,14 +1388,14 @@ const App = {
                         <button class="btn-delete-redaction" data-id="${r.id}" title="Verwijder">✕</button>
                     </div>
                 `;
-            } else {
-                const group = obj.items;
-                const count = group.length;
-                const key = obj.key;
-                const pages = [...new Set(group.map(r => r.pageNumber))].sort((a, b) => a - b).join(', ');
-                const safeKey = encodeURIComponent(key);
+    } else {
+        const group = obj.items;
+        const count = group.length;
+        const key = obj.key;
+        const pages = [...new Set(group.map(r => r.pageNumber))].sort((a, b) => a - b).join(', ');
+        const safeKey = encodeURIComponent(key);
 
-                html += `
+        html += `
                     <div class="redaction-item group-item" data-value="${safeKey}">
                         <div class="redaction-info">
                             <span class="type">🗂️</span>
@@ -1376,85 +1408,85 @@ const App = {
                         <button class="btn-delete-group" data-value="${safeKey}" title="Verwijder alle ${count}">✕</button>
                     </div>
                 `;
-            }
-        });
+    }
+});
 
-        this.elements.redactionsList.innerHTML = html;
+this.elements.redactionsList.innerHTML = html;
 
-        // Event Listeners for Singles
-        this.elements.redactionsList.querySelectorAll('.btn-delete-redaction').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                Redactor.removeRedaction(btn.dataset.id);
-                this.renderAllRedactions();
-                this.updateRedactionsList();
-            });
-        });
+// Event Listeners for Singles
+this.elements.redactionsList.querySelectorAll('.btn-delete-redaction').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        Redactor.removeRedaction(btn.dataset.id);
+        this.renderAllRedactions();
+        this.updateRedactionsList();
+    });
+});
 
-        // Event Listeners for Groups (Delete All)
-        this.elements.redactionsList.querySelectorAll('.btn-delete-group').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const value = decodeURIComponent(btn.dataset.value);
-                if (confirm(`Alle ${groups[value].length} instanties van "${value}" verwijderen?`)) {
-                    this.removeRedactionGlobally(value);
-                    this.renderAllRedactions();
-                    this.updateRedactionsList();
-                }
-            });
-        });
-
-        // Single Item Click (Scroll)
-        this.elements.redactionsList.querySelectorAll('.redaction-item:not(.group-item) .redaction-info').forEach(info => {
-            info.addEventListener('click', () => {
-                const item = info.closest('.redaction-item');
-                this.goToPage(parseInt(item.dataset.page));
-            });
-        });
-
-        // Group Item Click (Scroll to first?)
-        this.elements.redactionsList.querySelectorAll('.group-item .redaction-info').forEach(info => {
-            info.addEventListener('click', () => {
-                const item = info.closest('.group-item');
-                const value = decodeURIComponent(item.dataset.value);
-                const firstInstance = groups[value][0];
-                if (firstInstance) {
-                    this.goToPage(firstInstance.pageNumber);
-                }
-            });
-        });
-
-        // Clear all
-        const clearAllBtn = this.elements.redactionsList.querySelector('.btn-clear-all');
-        if (clearAllBtn) {
-            clearAllBtn.addEventListener('click', () => {
-                if (confirm('Weet je zeker dat je alle redacties wilt verwijderen?')) {
-                    Redactor.clearRedactions();
-                    this.renderAllRedactions();
-                    this.updateRedactionsList();
-                }
-            });
+// Event Listeners for Groups (Delete All)
+this.elements.redactionsList.querySelectorAll('.btn-delete-group').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const value = decodeURIComponent(btn.dataset.value);
+        if (confirm(`Alle ${groups[value].length} instanties van "${value}" verwijderen?`)) {
+            this.removeRedactionGlobally(value);
+            this.renderAllRedactions();
+            this.updateRedactionsList();
         }
+    });
+});
+
+// Single Item Click (Scroll)
+this.elements.redactionsList.querySelectorAll('.redaction-item:not(.group-item) .redaction-info').forEach(info => {
+    info.addEventListener('click', () => {
+        const item = info.closest('.redaction-item');
+        this.goToPage(parseInt(item.dataset.page));
+    });
+});
+
+// Group Item Click (Scroll to first?)
+this.elements.redactionsList.querySelectorAll('.group-item .redaction-info').forEach(info => {
+    info.addEventListener('click', () => {
+        const item = info.closest('.group-item');
+        const value = decodeURIComponent(item.dataset.value);
+        const firstInstance = groups[value][0];
+        if (firstInstance) {
+            this.goToPage(firstInstance.pageNumber);
+        }
+    });
+});
+
+// Clear all
+const clearAllBtn = this.elements.redactionsList.querySelector('.btn-clear-all');
+if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', () => {
+        if (confirm('Weet je zeker dat je alle redacties wilt verwijderen?')) {
+            Redactor.clearRedactions();
+            this.renderAllRedactions();
+            this.updateRedactionsList();
+        }
+    });
+}
     },
 
     /**
      * Open detection modal
      */
     async openDetectionModal() {
-        this.elements.modal.classList.remove('hidden');
-        this.elements.detectionProgress.classList.remove('hidden');
-        this.elements.detectionResults.classList.add('hidden');
-        this.elements.btnApplyDetections.classList.add('hidden');
+    this.elements.modal.classList.remove('hidden');
+    this.elements.detectionProgress.classList.remove('hidden');
+    this.elements.detectionResults.classList.add('hidden');
+    this.elements.btnApplyDetections.classList.add('hidden');
 
-        await this.runDetection();
-    },
+    await this.runDetection();
+},
 
-    /**
-     * Close modal
-     */
-    closeModal() {
-        this.elements.modal.classList.add('hidden');
-    },
+/**
+ * Close modal
+ */
+closeModal() {
+    this.elements.modal.classList.add('hidden');
+},
 
 
 
@@ -1463,234 +1495,234 @@ const App = {
      * @param {boolean} useAI - Whether to use Mistral AI
      */
     async runDetection(useAI = false) {
-        const allDetections = {
-            byCategory: {},
-            all: [],
-            stats: { total: 0, categories: 0 }
-        };
+    const allDetections = {
+        byCategory: {},
+        all: [],
+        stats: { total: 0, categories: 0 }
+    };
 
-        this.textItemsPerPage = new Map();
+    this.textItemsPerPage = new Map();
 
-        for (let i = 1; i <= this.totalPages; i++) {
-            const page = await this.pdfDoc.getPage(i);
-            const textContent = await page.getTextContent();
-            const viewport = page.getViewport({ scale: 1 });
+    for (let i = 1; i <= this.totalPages; i++) {
+        const page = await this.pdfDoc.getPage(i);
+        const textContent = await page.getTextContent();
+        const viewport = page.getViewport({ scale: 1 });
 
-            const textItems = textContent.items.map(item => ({
-                str: item.str,
-                x: item.transform[4],
-                y: item.transform[5],
-                width: item.width,
-                height: item.height || Math.abs(item.transform[0]) || 12,
-                fontHeight: Math.abs(item.transform[0]) || 12
-            }));
-            this.textItemsPerPage.set(i, textItems);
+        const textItems = textContent.items.map(item => ({
+            str: item.str,
+            x: item.transform[4],
+            y: item.transform[5],
+            width: item.width,
+            height: item.height || Math.abs(item.transform[0]) || 12,
+            fontHeight: Math.abs(item.transform[0]) || 12
+        }));
+        this.textItemsPerPage.set(i, textItems);
 
-            let combinedText = '';
-            for (let j = 0; j < textItems.length; j++) {
-                combinedText += textItems[j].str + ' ';
-            }
+        let combinedText = '';
+        for (let j = 0; j < textItems.length; j++) {
+            combinedText += textItems[j].str + ' ';
+        }
 
-            // Run standard detection
-            const pageDetections = Detector.detect(combinedText, i);
+        // Run standard detection
+        const pageDetections = Detector.detect(combinedText, i);
 
-            // Run AI detection if enabled
-            if (useAI && typeof MistralService !== 'undefined') {
-                try {
-                    // Call backend proxy
-                    const aiResults = await MistralService.analyzeText(combinedText);
+        // Run AI detection if enabled
+        if (useAI && typeof MistralService !== 'undefined') {
+            try {
+                // Call backend proxy
+                const aiResults = await MistralService.analyzeText(combinedText);
 
-                    // Merge AI results
-                    // Mistral returns [{type, value, confidence}]
-                    // We need to find ALL instances of these values in the text
-                    for (const item of aiResults) {
-                        const searchVal = item.value.trim();
-                        if (searchVal.length < 2) continue;
+                // Merge AI results
+                // Mistral returns [{type, value, confidence}]
+                // We need to find ALL instances of these values in the text
+                for (const item of aiResults) {
+                    const searchVal = item.value.trim();
+                    if (searchVal.length < 2) continue;
 
-                        let pos = -1;
-                        let searchPos = 0;
-                        const lowerText = combinedText.toLowerCase();
-                        const lowerSearch = searchVal.toLowerCase();
+                    let pos = -1;
+                    let searchPos = 0;
+                    const lowerText = combinedText.toLowerCase();
+                    const lowerSearch = searchVal.toLowerCase();
 
-                        // Find all occurrences
-                        while ((pos = lowerText.indexOf(lowerSearch, searchPos)) !== -1) {
-                            searchPos = pos + 1;
+                    // Find all occurrences
+                    while ((pos = lowerText.indexOf(lowerSearch, searchPos)) !== -1) {
+                        searchPos = pos + 1;
 
-                            // Check if already detected by regex to avoid duplicates
-                            const alreadyFound = pageDetections.all.some(d =>
-                                d.startIndex === pos && d.value.length === searchVal.length
-                            );
+                        // Check if already detected by regex to avoid duplicates
+                        const alreadyFound = pageDetections.all.some(d =>
+                            d.startIndex === pos && d.value.length === searchVal.length
+                        );
 
-                            if (!alreadyFound && (!Detector.shouldExclude || !Detector.shouldExclude(searchVal, pos, combinedText))) {
-                                pageDetections.all.push({
-                                    type: item.type, // Map 'name', 'email', etc.
-                                    name: 'AI: ' + (item.type.charAt(0).toUpperCase() + item.type.slice(1)),
-                                    icon: '🤖',
-                                    value: combinedText.substr(pos, searchVal.length), // Use actual text from doc
-                                    page: i,
-                                    startIndex: pos,
-                                    endIndex: pos + searchVal.length,
-                                    selected: true,
-                                    confidence: item.confidence
-                                });
-                            }
+                        if (!alreadyFound && (!Detector.shouldExclude || !Detector.shouldExclude(searchVal, pos, combinedText))) {
+                            pageDetections.all.push({
+                                type: item.type, // Map 'name', 'email', etc.
+                                name: 'AI: ' + (item.type.charAt(0).toUpperCase() + item.type.slice(1)),
+                                icon: '🤖',
+                                value: combinedText.substr(pos, searchVal.length), // Use actual text from doc
+                                page: i,
+                                startIndex: pos,
+                                endIndex: pos + searchVal.length,
+                                selected: true,
+                                confidence: item.confidence
+                            });
                         }
                     }
-
-                    // Group AI items into categories
-                    // pageDetections.byCategory needs update
-                    const categories = {};
-                    pageDetections.all.forEach(det => {
-                        const catKey = det.type;
-                        if (!categories[catKey]) {
-                            categories[catKey] = {
-                                name: det.name || det.type,
-                                icon: det.icon || '🔹',
-                                items: []
-                            };
-                        }
-                        categories[catKey].items.push(det);
-                    });
-                    pageDetections.byCategory = categories;
-
-                } catch (err) {
-                    console.error("AI Error on page " + i, err);
-                    // Continue with regex results
                 }
-            }
 
-            // Get bounds for all detections (Regex + AI)
-            for (const detection of pageDetections.all) {
-                const bounds = this.findTextBounds(detection.value, detection.startIndex, textItems, viewport);
-                if (bounds) {
-                    detection.bounds = bounds;
-                }
-            }
+                // Group AI items into categories
+                // pageDetections.byCategory needs update
+                const categories = {};
+                pageDetections.all.forEach(det => {
+                    const catKey = det.type;
+                    if (!categories[catKey]) {
+                        categories[catKey] = {
+                            name: det.name || det.type,
+                            icon: det.icon || '🔹',
+                            items: []
+                        };
+                    }
+                    categories[catKey].items.push(det);
+                });
+                pageDetections.byCategory = categories;
 
-            // Merge results into global object
-            for (const [category, data] of Object.entries(pageDetections.byCategory)) {
-
-                if (data.items.length === 0) continue;
-
-                if (!allDetections.byCategory[category]) {
-                    allDetections.byCategory[category] = {
-                        name: data.name,
-                        icon: data.icon,
-                        items: []
-                    };
-                }
-                allDetections.byCategory[category].items.push(...data.items);
-            }
-
-            // Add learned words category if any
-            const learnedItems = pageDetections.all.filter(d => d.type === 'learned');
-            if (learnedItems.length > 0) {
-                if (!allDetections.byCategory['learned']) {
-                    allDetections.byCategory['learned'] = {
-                        name: 'Geleerde woorden',
-                        icon: '🧠',
-                        items: []
-                    };
-                }
-                allDetections.byCategory['learned'].items.push(...learnedItems);
-            }
-
-            allDetections.all.push(...pageDetections.all);
-        }
-
-        allDetections.stats.total = allDetections.all.length;
-        allDetections.stats.categories = Object.keys(allDetections.byCategory).length;
-
-        this.currentDetections = allDetections;
-        this.displayDetectionResults(allDetections);
-    },
-
-    /**
-     * Escape regex special characters
-     */
-    escapeRegex(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    },
-
-    /**
-     * Find bounding box for detected text
-     */
-    findTextBounds(searchValue, startIndex, textItems, viewport) {
-        if (!searchValue || searchValue.trim().length < 2) return null;
-
-        let minX = Infinity, minY = Infinity;
-        let maxX = -Infinity, maxY = -Infinity;
-        let found = false;
-
-        // 1. Map text items to their positions in the full text string
-        // This MUST match exactly how 'runDetection' builds the string for the Detector
-        let fullText = '';
-        const itemPositions = [];
-
-        for (let i = 0; i < textItems.length; i++) {
-            const item = textItems[i];
-            const startPos = fullText.length;
-            fullText += item.str;
-            const endPos = fullText.length;
-
-            // Store the range this item covers in the full text
-            itemPositions.push({ startPos, endPos, item });
-
-            fullText += ' '; // Add space between items (same as runDetection)
-        }
-
-        // 2. Identify text items that are part of the detected range [startIndex, endIndex]
-        const endIndex = startIndex + searchValue.length;
-
-        for (const pos of itemPositions) {
-            // Check for overlap: 
-            // Item ends after start of match AND Item starts before end of match
-            if (pos.endPos > startIndex && pos.startPos < endIndex) {
-                found = true;
-                const item = pos.item;
-
-                // Use the item's geometry
-                const x = item.x;
-                const fontHeight = item.fontHeight || 12;
-                // PDF coordinates are usually bottom-left, verify if y needs adjustment
-                // Standard PDF.js: y is bottom coordinate of baseline.
-                // We want key bounds.
-                // PDF coordinates: item.y is the baseline.
-                // We want the box bottom to be slightly below baseline (for descenders)
-                const y = item.y - (fontHeight * 0.25);
-                const height = fontHeight * 1.25;
-
-                // Calculate width: use provided width or fallback estimate
-                const width = item.width || (item.str.length * fontHeight * 0.6);
-
-
-                minX = Math.min(minX, x);
-                minY = Math.min(minY, y);
-                maxX = Math.max(maxX, x + width);
-                maxY = Math.max(maxY, y + height);
+            } catch (err) {
+                console.error("AI Error on page " + i, err);
+                // Continue with regex results
             }
         }
 
-        if (!found || minX === Infinity) return null;
+        // Get bounds for all detections (Regex + AI)
+        for (const detection of pageDetections.all) {
+            const bounds = this.findTextBounds(detection.value, detection.startIndex, textItems, viewport);
+            if (bounds) {
+                detection.bounds = bounds;
+            }
+        }
 
-        const padding = 2;
-        return {
-            x: minX - padding,
-            y: minY - padding,
-            width: (maxX - minX) + (padding * 2),
-            height: (maxY - minY) + (padding * 2)
-        };
-    },
+        // Merge results into global object
+        for (const [category, data] of Object.entries(pageDetections.byCategory)) {
 
-    /**
-     * Display detection results in modal
-     */
-    displayDetectionResults(detections) {
-        this.elements.detectionProgress.classList.add('hidden');
-        this.elements.detectionResults.classList.remove('hidden');
+            if (data.items.length === 0) continue;
 
-        if (detections.stats.total === 0) {
-            this.elements.detectionResults.innerHTML = `
+            if (!allDetections.byCategory[category]) {
+                allDetections.byCategory[category] = {
+                    name: data.name,
+                    icon: data.icon,
+                    items: []
+                };
+            }
+            allDetections.byCategory[category].items.push(...data.items);
+        }
+
+        // Add learned words category if any
+        const learnedItems = pageDetections.all.filter(d => d.type === 'learned');
+        if (learnedItems.length > 0) {
+            if (!allDetections.byCategory['learned']) {
+                allDetections.byCategory['learned'] = {
+                    name: 'Geleerde woorden',
+                    icon: '🧠',
+                    items: []
+                };
+            }
+            allDetections.byCategory['learned'].items.push(...learnedItems);
+        }
+
+        allDetections.all.push(...pageDetections.all);
+    }
+
+    allDetections.stats.total = allDetections.all.length;
+    allDetections.stats.categories = Object.keys(allDetections.byCategory).length;
+
+    this.currentDetections = allDetections;
+    this.displayDetectionResults(allDetections);
+},
+
+/**
+ * Escape regex special characters
+ */
+escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+},
+
+/**
+ * Find bounding box for detected text
+ */
+findTextBounds(searchValue, startIndex, textItems, viewport) {
+    if (!searchValue || searchValue.trim().length < 2) return null;
+
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    let found = false;
+
+    // 1. Map text items to their positions in the full text string
+    // This MUST match exactly how 'runDetection' builds the string for the Detector
+    let fullText = '';
+    const itemPositions = [];
+
+    for (let i = 0; i < textItems.length; i++) {
+        const item = textItems[i];
+        const startPos = fullText.length;
+        fullText += item.str;
+        const endPos = fullText.length;
+
+        // Store the range this item covers in the full text
+        itemPositions.push({ startPos, endPos, item });
+
+        fullText += ' '; // Add space between items (same as runDetection)
+    }
+
+    // 2. Identify text items that are part of the detected range [startIndex, endIndex]
+    const endIndex = startIndex + searchValue.length;
+
+    for (const pos of itemPositions) {
+        // Check for overlap: 
+        // Item ends after start of match AND Item starts before end of match
+        if (pos.endPos > startIndex && pos.startPos < endIndex) {
+            found = true;
+            const item = pos.item;
+
+            // Use the item's geometry
+            const x = item.x;
+            const fontHeight = item.fontHeight || 12;
+            // PDF coordinates are usually bottom-left, verify if y needs adjustment
+            // Standard PDF.js: y is bottom coordinate of baseline.
+            // We want key bounds.
+            // PDF coordinates: item.y is the baseline.
+            // We want the box bottom to be slightly below baseline (for descenders)
+            const y = item.y - (fontHeight * 0.25);
+            const height = fontHeight * 1.25;
+
+            // Calculate width: use provided width or fallback estimate
+            const width = item.width || (item.str.length * fontHeight * 0.6);
+
+
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x + width);
+            maxY = Math.max(maxY, y + height);
+        }
+    }
+
+    if (!found || minX === Infinity) return null;
+
+    const padding = 2;
+    return {
+        x: minX - padding,
+        y: minY - padding,
+        width: (maxX - minX) + (padding * 2),
+        height: (maxY - minY) + (padding * 2)
+    };
+},
+
+/**
+ * Display detection results in modal
+ */
+displayDetectionResults(detections) {
+    this.elements.detectionProgress.classList.add('hidden');
+    this.elements.detectionResults.classList.remove('hidden');
+
+    if (detections.stats.total === 0) {
+        this.elements.detectionResults.innerHTML = `
                 <div style="text-align: center; padding: 2rem;">
                     <p style="font-size: 3rem; margin-bottom: 1rem;">✅</p>
                     <p>Geen persoonsgegevens gedetecteerd!</p>
@@ -1699,40 +1731,40 @@ const App = {
                     </p>
                 </div>
             `;
-            return;
-        }
+        return;
+    }
 
-        this.elements.btnApplyDetections.classList.remove('hidden');
+    this.elements.btnApplyDetections.classList.remove('hidden');
 
-        let html = `
+    let html = `
             <p style="margin-bottom: 1rem; color: var(--text-secondary);">
                 ${detections.stats.total} item(s) gevonden in ${detections.stats.categories} categorie(ën)
             </p>
         `;
 
-        for (const [category, data] of Object.entries(detections.byCategory)) {
-            // Group items by value (normalized)
-            const groups = {};
-            data.items.forEach(item => {
-                const key = item.value.trim();
-                if (!groups[key]) {
-                    groups[key] = {
-                        value: item.value, // Keep original
-                        count: 0,
-                        items: [],
-                        selected: item.selected !== false
-                    };
-                }
-                groups[key].count++;
-                groups[key].items.push(item);
-                // If any item in group is unselected by default, unselect group?
-                // Or if any is selected, select group?
-                // Let's bias towards initial detection state.
-            });
+    for (const [category, data] of Object.entries(detections.byCategory)) {
+        // Group items by value (normalized)
+        const groups = {};
+        data.items.forEach(item => {
+            const key = item.value.trim();
+            if (!groups[key]) {
+                groups[key] = {
+                    value: item.value, // Keep original
+                    count: 0,
+                    items: [],
+                    selected: item.selected !== false
+                };
+            }
+            groups[key].count++;
+            groups[key].items.push(item);
+            // If any item in group is unselected by default, unselect group?
+            // Or if any is selected, select group?
+            // Let's bias towards initial detection state.
+        });
 
-            const sortedKeys = Object.keys(groups).sort();
+        const sortedKeys = Object.keys(groups).sort();
 
-            html += `
+        html += `
                 <div class="detection-category">
                     <div class="detection-category-header">
                         <span class="detection-category-title">
@@ -1748,11 +1780,11 @@ const App = {
                     </div>
                     <div class="detection-category-items">
                         ${sortedKeys.map((key, idx) => {
-                const group = groups[key];
-                const pages = [...new Set(group.items.map(i => i.page))].sort((a, b) => a - b).join(', ');
-                const countLabel = group.count > 1 ? `<span style="font-size:0.8em; color:var(--text-muted);">(${group.count}x)</span>` : '';
+            const group = groups[key];
+            const pages = [...new Set(group.items.map(i => i.page))].sort((a, b) => a - b).join(', ');
+            const countLabel = group.count > 1 ? `<span style="font-size:0.8em; color:var(--text-muted);">(${group.count}x)</span>` : '';
 
-                return `
+            return `
                             <label class="detection-check-item">
                                 <input type="checkbox" 
                                        data-category="${category}" 
@@ -1764,125 +1796,125 @@ const App = {
                                 </div>
                             </label>
                         `;
-            }).join('')}
+        }).join('')}
                     </div>
                 </div>
             `;
-        }
+    }
 
-        this.elements.detectionResults.innerHTML = html;
-    },
+    this.elements.detectionResults.innerHTML = html;
+},
 
-    /**
-     * Mask part of sensitive value for display
-     */
-    maskValue(value) {
-        if (value.length <= 4) return value;
-        const visible = Math.min(4, Math.floor(value.length / 3));
-        return value.substring(0, visible) + '•'.repeat(value.length - visible);
-    },
+/**
+ * Mask part of sensitive value for display
+ */
+maskValue(value) {
+    if (value.length <= 4) return value;
+    const visible = Math.min(4, Math.floor(value.length / 3));
+    return value.substring(0, visible) + '•'.repeat(value.length - visible);
+},
 
     /**
      * Apply selected detections as redactions
      */
     async applyDetections() {
-        const checkboxes = this.elements.detectionResults.querySelectorAll('input[type="checkbox"]:checked');
-        const itemsToRedact = [];
+    const checkboxes = this.elements.detectionResults.querySelectorAll('input[type="checkbox"]:checked');
+    const itemsToRedact = [];
 
-        for (const checkbox of checkboxes) {
-            const category = checkbox.dataset.category;
-            const value = decodeURIComponent(checkbox.dataset.value);
+    for (const checkbox of checkboxes) {
+        const category = checkbox.dataset.category;
+        const value = decodeURIComponent(checkbox.dataset.value);
 
-            const categoryData = this.currentDetections.byCategory[category];
-            if (categoryData && categoryData.items) {
-                // Determine matches by value
-                const matches = categoryData.items.filter(item => {
-                    // Normalize comparison
-                    return item.value.trim() === value;
-                });
-
-                itemsToRedact.push(...matches);
-            }
-        }
-
-        // Apply redactions
-        for (const item of itemsToRedact) {
-            let bounds = item.bounds;
-            if (!bounds) {
-                const textItems = this.textItemsPerPage?.get(item.page);
-                if (textItems) {
-                    bounds = this.findTextBounds(item.value, item.startIndex, textItems, null);
-                }
-                if (!bounds) {
-                    bounds = {
-                        x: 50,
-                        y: 750,
-                        width: Math.max(item.value.length * 8, 50),
-                        height: 16
-                    };
-                }
-            }
-
-            Redactor.addRedaction(item.page, bounds, item.type, item.value);
-        }
-
-        this.renderAllRedactions();
-        this.updateRedactionsList();
-        this.updateDetectionsList();
-        this.closeModal();
-    },
-
-    /**
-     * Update detections list in sidebar
-     */
-    updateDetectionsList() {
-        if (!this.currentDetections || this.currentDetections.stats.total === 0) {
-            this.elements.detectionsList.innerHTML = '<p class="empty-state">Klik op "Auto-detectie" om te scannen</p>';
-            return;
-        }
-
-        const applied = Redactor.getAllRedactions().length;
-
-        let learnedInfo = '';
-
-        // Use Detector state for stats
-        if (typeof Detector !== 'undefined') {
-            const learnedCount = Detector.getLearnedWords ? Detector.getLearnedWords().size : 0;
-            const ignoredCount = Detector.getIgnoredWords ? Detector.getIgnoredWords().size : 0;
-
-            if (learnedCount > 0) {
-                learnedInfo = `<br><small>🧠 ${learnedCount} geleerd</small>`;
-            }
-            if (ignoredCount > 0) {
-                learnedInfo += `<br><small>🚫 ${ignoredCount} genegeerd</small>`;
-            }
-
-            // Show/hide clear button
-            if (this.elements.btnClearLearning) {
-                if (learnedCount > 0 || ignoredCount > 0) {
-                    this.elements.btnClearLearning.classList.remove('hidden');
-                } else {
-                    this.elements.btnClearLearning.classList.add('hidden');
-                }
-            }
-        }
-
-        let itemsHtml = '';
-        if (this.currentDetections) {
-            // Flatten items
-            const allItems = [];
-            Object.values(this.currentDetections.byCategory).forEach(cat => {
-                allItems.push(...cat.items);
+        const categoryData = this.currentDetections.byCategory[category];
+        if (categoryData && categoryData.items) {
+            // Determine matches by value
+            const matches = categoryData.items.filter(item => {
+                // Normalize comparison
+                return item.value.trim() === value;
             });
 
-            // Limit display to 50 items to prevent lag
-            const displayItems = allItems.slice(0, 50);
+            itemsToRedact.push(...matches);
+        }
+    }
 
-            itemsHtml = '<div class="detections-scrollable">';
-            displayItems.forEach(item => {
-                const isIgnored = Detector.shouldIgnore ? Detector.shouldIgnore(item.value) : false;
-                const style = isIgnored ? 'opacity: 0.5; text-decoration: line-through;' : '';
-                itemsHtml += `
+    // Apply redactions
+    for (const item of itemsToRedact) {
+        let bounds = item.bounds;
+        if (!bounds) {
+            const textItems = this.textItemsPerPage?.get(item.page);
+            if (textItems) {
+                bounds = this.findTextBounds(item.value, item.startIndex, textItems, null);
+            }
+            if (!bounds) {
+                bounds = {
+                    x: 50,
+                    y: 750,
+                    width: Math.max(item.value.length * 8, 50),
+                    height: 16
+                };
+            }
+        }
+
+        Redactor.addRedaction(item.page, bounds, item.type, item.value);
+    }
+
+    this.renderAllRedactions();
+    this.updateRedactionsList();
+    this.updateDetectionsList();
+    this.closeModal();
+},
+
+/**
+ * Update detections list in sidebar
+ */
+updateDetectionsList() {
+    if (!this.currentDetections || this.currentDetections.stats.total === 0) {
+        this.elements.detectionsList.innerHTML = '<p class="empty-state">Klik op "Auto-detectie" om te scannen</p>';
+        return;
+    }
+
+    const applied = Redactor.getAllRedactions().length;
+
+    let learnedInfo = '';
+
+    // Use Detector state for stats
+    if (typeof Detector !== 'undefined') {
+        const learnedCount = Detector.getLearnedWords ? Detector.getLearnedWords().size : 0;
+        const ignoredCount = Detector.getIgnoredWords ? Detector.getIgnoredWords().size : 0;
+
+        if (learnedCount > 0) {
+            learnedInfo = `<br><small>🧠 ${learnedCount} geleerd</small>`;
+        }
+        if (ignoredCount > 0) {
+            learnedInfo += `<br><small>🚫 ${ignoredCount} genegeerd</small>`;
+        }
+
+        // Show/hide clear button
+        if (this.elements.btnClearLearning) {
+            if (learnedCount > 0 || ignoredCount > 0) {
+                this.elements.btnClearLearning.classList.remove('hidden');
+            } else {
+                this.elements.btnClearLearning.classList.add('hidden');
+            }
+        }
+    }
+
+    let itemsHtml = '';
+    if (this.currentDetections) {
+        // Flatten items
+        const allItems = [];
+        Object.values(this.currentDetections.byCategory).forEach(cat => {
+            allItems.push(...cat.items);
+        });
+
+        // Limit display to 50 items to prevent lag
+        const displayItems = allItems.slice(0, 50);
+
+        itemsHtml = '<div class="detections-scrollable">';
+        displayItems.forEach(item => {
+            const isIgnored = Detector.shouldIgnore ? Detector.shouldIgnore(item.value) : false;
+            const style = isIgnored ? 'opacity: 0.5; text-decoration: line-through;' : '';
+            itemsHtml += `
                     <div class="detection-item" style="${style}">
                         <div style="flex:1; overflow:hidden;">
                             <span class="type">${item.icon || '🔹'} ${item.name}</span><br>
@@ -1890,64 +1922,64 @@ const App = {
                         </div>
                     </div>
                 `;
-            });
-            if (allItems.length > 50) {
-                itemsHtml += `<div class="detection-item" style="justify-content:center; color:var(--text-muted)">...en nog ${allItems.length - 50} items</div>`;
-            }
-            itemsHtml += '</div>';
+        });
+        if (allItems.length > 50) {
+            itemsHtml += `<div class="detection-item" style="justify-content:center; color:var(--text-muted)">...en nog ${allItems.length - 50} items</div>`;
         }
+        itemsHtml += '</div>';
+    }
 
-        this.elements.detectionsList.innerHTML = `
+    this.elements.detectionsList.innerHTML = `
             <p style="font-size: 0.85rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
                 <strong>${this.currentDetections.stats.total} gevonden</strong> (${applied} toegepast)
                 ${learnedInfo}
             </p>
             ${itemsHtml}
         `;
-    },
+},
 
     /**
      * Export redacted PDF
      */
     async exportPDF() {
-        try {
-            this.elements.btnExport.disabled = true;
-            this.elements.btnExport.innerHTML = '<span class="spinner" style="width: 16px; height: 16px;"></span> Bezig...';
+    try {
+        this.elements.btnExport.disabled = true;
+        this.elements.btnExport.innerHTML = '<span class="spinner" style="width: 16px; height: 16px;"></span> Bezig...';
 
-            const pdfBytes = await Redactor.exportRedactedPDF();
+        const pdfBytes = await Redactor.exportRedactedPDF();
 
-            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'geanonimiseerd_' + this.elements.filename.textContent;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'geanonimiseerd_' + this.elements.filename.textContent;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
 
-        } catch (error) {
-            console.error('Export error:', error);
-            alert('Fout bij exporteren. Probeer het opnieuw.');
-        } finally {
-            this.elements.btnExport.disabled = false;
-            this.elements.btnExport.innerHTML = '<span>💾</span> Exporteer veilige PDF';
-        }
-    },
-
-    /**
-     * Handle keyboard shortcuts
-     */
-    handleKeyboard(event) {
-        if (event.key === 'Escape') {
-            this.closeModal();
-        }
-
-        if ((event.ctrlKey || event.metaKey) && event.key === 's') {
-            event.preventDefault();
-            this.exportPDF();
-        }
+    } catch (error) {
+        console.error('Export error:', error);
+        alert('Fout bij exporteren. Probeer het opnieuw.');
+    } finally {
+        this.elements.btnExport.disabled = false;
+        this.elements.btnExport.innerHTML = '<span>💾</span> Exporteer veilige PDF';
     }
+},
+
+/**
+ * Handle keyboard shortcuts
+ */
+handleKeyboard(event) {
+    if (event.key === 'Escape') {
+        this.closeModal();
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        event.preventDefault();
+        this.exportPDF();
+    }
+}
 };
 
 // Initialize when DOM is ready

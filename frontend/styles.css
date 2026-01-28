@@ -1098,4 +1098,58 @@ body::before {
 .btn-delete-redaction:hover {
     background: rgba(239, 68, 68, 0.3);
     color: var(--accent-danger);
+    transform: scale(1.1);
+}
+
+/* Page Thumbnails */
+.page-thumbnail-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+}
+
+.page-thumbnail-wrapper:hover {
+    background: var(--bg-glass-hover);
+}
+
+.page-thumbnail-wrapper.active {
+    background: var(--bg-glass-hover);
+    border-color: var(--accent-primary);
+}
+
+.page-thumbnail-canvas {
+    border: 1px solid var(--border-color);
+    margin-bottom: var(--spacing-xs);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Highlight Animation */
+@keyframes highlight-pulse {
+    0% {
+        background-color: rgba(99, 102, 241, 0.1);
+    }
+
+    50% {
+        background-color: rgba(99, 102, 241, 0.4);
+    }
+
+    100% {
+        background-color: rgba(99, 102, 241, 0.1);
+    }
+}
+
+.detection-item.highlight,
+.redaction-item.highlight {
+    animation: highlight-pulse 1.5s ease-in-out;
+}
+
+.detection-item.selected,
+.redaction-item.selected {
+    border-left: 3px solid var(--accent-secondary);
+    background: var(--bg-glass-hover);
 }
