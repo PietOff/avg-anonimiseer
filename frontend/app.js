@@ -1659,7 +1659,8 @@ const App = {
             const sortedKeys = Object.keys(groups).sort();
 
             html += `
-    < div class="detection-category" >
+            html += `
+                < div class="detection-category" >
                     <div class="detection-category-header">
                         <span class="detection-category-title">
                             ${data.icon} ${data.name}
@@ -1777,6 +1778,7 @@ const App = {
             const ignoredCount = Detector.getIgnoredWords ? Detector.getIgnoredWords().size : 0;
 
             if (learnedCount > 0) {
+            if (learnedCount > 0) {
                 learnedInfo = `< br > <small>🧠 ${learnedCount} geleerd</small>`;
             }
             if (ignoredCount > 0) {
@@ -1818,17 +1820,17 @@ const App = {
     `;
             });
             if (allItems.length > 50) {
-                itemsHtml += `< div class="detection-item" style = "justify-content:center; color:var(--text-muted)" >...en nog ${allItems.length - 50} items</div > `;
+                itemsHtml += `< div class="detection-item" style = "justify-content:center; color:var(--text-muted)" >...en nog ${ allItems.length - 50 } items</div > `;
             }
             itemsHtml += '</div>';
         }
 
         this.elements.detectionsList.innerHTML = `
     < p style = "font-size: 0.85rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;" >
-        <strong>${this.currentDetections.stats.total} gevonden</strong> (${applied} toegepast)
-                ${learnedInfo}
+        <strong>${this.currentDetections.stats.total} gevonden</strong> (${ applied } toegepast)
+                ${ learnedInfo }
             </p >
-    ${itemsHtml}
+    ${ itemsHtml }
 `;
     },
 
