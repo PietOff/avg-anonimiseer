@@ -1414,7 +1414,10 @@ const App = {
                 // PDF coordinates are usually bottom-left, verify if y needs adjustment
                 // Standard PDF.js: y is bottom coordinate of baseline.
                 // We want key bounds.
-                const y = item.y - fontHeight; // Top Y (approx)
+                // PDF coordinates: item.y is the baseline.
+                // We want the box bottom to be slightly below baseline (for descenders)
+                const y = item.y - (fontHeight * 0.25);
+                const height = fontHeight * 1.25;
 
                 // Calculate width: use provided width or fallback estimate
                 const width = item.width || (item.str.length * fontHeight * 0.6);
