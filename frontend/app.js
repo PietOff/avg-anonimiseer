@@ -1060,40 +1060,82 @@ const App = {
             </div>
         `;
 
-        // Render Singles (Manual/No Value)
-        html += singles.map(r => `
-            <div class="redaction-item" data-id="${r.id}" data-page="${r.pageNumber}">
-                <div class="redaction-info">
-                    <span class="type">✏️</span>
-                    <span class="value">${r.value || 'Handmatig'}</span>
-                    <span class="page">P${r.pageNumber}</span>
-                </div>
-                <button class="btn-delete-redaction" data-id="${r.id}" title="Verwijder">✕</button>
-            </div>
-        `).join('');
-
         // Render Groups
-        Object.keys(groups).sort().forEach(key => {
-            const group = groups[key];
-            const count = group.length;
-            const pages = [...new Set(group.map(r => r.pageNumber))].sort((a, b) => a - b).join(', ');
+        const displayItems = [];
 
-            // Use encoding for safety
-            const safeKey = encodeURIComponent(key);
+        // Add groups to displayItems
+        Object.keys(groups).forEach(key => {
+            const items = groups[key];
+            // Sort items inside the group to find the "first" one visually
+            items.sort((a, b) => { // Page ASC, Y DESC (top to bottom), X ASC
+                if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber;
+                if (Math.abs(a.bounds.y - b.bounds.y) > 5) return b.bounds.y - a.bounds.y;
+                return a.bounds.x - b.bounds.x;
+            });
 
-            html += `
-                <div class="redaction-item group-item" data-value="${safeKey}">
-                    <div class="redaction-info">
-                        <span class="type">🗂️</span>
-                        <div style="flex:1">
-                            <span class="value" title="${key}">${key}</span>
-                            ${count > 1 ? `<span style="font-size:0.8em; color:var(--text-muted); margin-left:4px;">(${count}x)</span>` : ''}
+            displayItems.push({
+                type: 'group',
+                key: key,
+                items: items,
+                representative: items[0]
+            });
+        });
+
+        // Add singles to displayItems
+        singles.forEach(r => {
+            displayItems.push({
+                type: 'single',
+                item: r,
+                representative: r
+            });
+        });
+
+        // Sort the entire list by the position of the representative item
+        displayItems.sort((a, b) => {
+            const ra = a.representative;
+            const rb = b.representative;
+
+            if (ra.pageNumber !== rb.pageNumber) return ra.pageNumber - rb.pageNumber;
+            // PDF: Y=0 is bottom. Reading order is Top (High Y) -> Bottom (Low Y)
+            if (Math.abs(ra.bounds.y - rb.bounds.y) > 5) return rb.bounds.y - ra.bounds.y;
+            return ra.bounds.x - rb.bounds.x;
+        });
+
+        // Render sorted items
+        displayItems.forEach(obj => {
+            if (obj.type === 'single') {
+                const r = obj.item;
+                html += `
+                    <div class="redaction-item" data-id="${r.id}" data-page="${r.pageNumber}">
+                        <div class="redaction-info">
+                            <span class="type">✏️</span>
+                            <span class="value">${r.value || 'Handmatig'}</span>
+                            <span class="page">P${r.pageNumber}</span>
                         </div>
-                        <span class="page" style="font-size:0.75rem;">P${pages}</span>
+                        <button class="btn-delete-redaction" data-id="${r.id}" title="Verwijder">✕</button>
                     </div>
-                    <button class="btn-delete-group" data-value="${safeKey}" title="Verwijder alle ${count}">✕</button>
-                </div>
-            `;
+                `;
+            } else {
+                const group = obj.items;
+                const count = group.length;
+                const key = obj.key;
+                const pages = [...new Set(group.map(r => r.pageNumber))].sort((a, b) => a - b).join(', ');
+                const safeKey = encodeURIComponent(key);
+
+                html += `
+                    <div class="redaction-item group-item" data-value="${safeKey}">
+                        <div class="redaction-info">
+                            <span class="type">🗂️</span>
+                            <div style="flex:1">
+                                <span class="value" title="${key}">${key}</span>
+                                ${count > 1 ? `<span style="font-size:0.8em; color:var(--text-muted); margin-left:4px;">(${count}x)</span>` : ''}
+                            </div>
+                            <span class="page" style="font-size:0.75rem;">P${pages}</span>
+                        </div>
+                        <button class="btn-delete-group" data-value="${safeKey}" title="Verwijder alle ${count}">✕</button>
+                    </div>
+                `;
+            }
         });
 
         this.elements.redactionsList.innerHTML = html;
