@@ -1,4 +1,39 @@
 /**
+ * Helper function for address validation
+ * Defined outside Detector to ensure availability
+ */
+function validateAddressHelper(match, matchIndex, fullText) {
+    if (!fullText || matchIndex === undefined) return true;
+
+    // 1. Check for Business Indicators PRECEDING the address
+    const businessIndicators = [
+        'gemeente', 'provincie', 'waterschap', 'stichting', 'vereniging',
+        'b.v.', 'n.v.', 'v.o.f.', 'bv', 'nv', 'firma', 'bedrijf',
+        'kantoor', 'postbus', 'antwoordnummer', 'locatie',
+        'bezoekadres', 'postadres', 'vestiging',
+        'ministerie', 'inspectie', 'dienst', 'afdeling'
+    ];
+
+    // Check the 50 chars BEFORE match for these words
+    const preText = fullText.substring(Math.max(0, matchIndex - 60), matchIndex).toLowerCase();
+
+    for (const indicator of businessIndicators) {
+        if (preText.includes(indicator)) {
+            return false;
+        }
+    }
+
+    // 2. Metadata Keywords (Subject of report)
+    const metadataKeywords = ['betreft:', 'onderwerp:', 'inzake:', 'locatie:', 'project:'];
+    for (const keyword of metadataKeywords) {
+        if (preText.includes(keyword)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+/**
  * AVG Anonimiseer - Detector Module
  * Automatically detects personal data in text content
  */
@@ -103,7 +138,7 @@ const Detector = {
             name: 'Adres',
             icon: '🏠',
             regex: /\b[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:straat|laan|weg|plein|singel|gracht|kade|dijk|hof|steeg|pad|dreef|boulevard)\s+\d+[a-z]?(?:\s*[-\/]\s*\d+)?\b/gi,
-            validate: (match, matchIndex, fullText) => Detector.validateAddress(match, matchIndex, fullText)
+            validate: (match, matchIndex, fullText) => validateAddressHelper(match, matchIndex, fullText)
         },
 
         // Cadastral numbers (kadastrale nummers - common in soil reports)
@@ -112,6 +147,23 @@ const Detector = {
             icon: '📋',
             regex: /\b[A-Z]{3}\d{2}\s*[A-Z]\s*\d{4,5}\b/gi,
             validate: () => true
+        },
+
+        // Signature Context (Assisted Discovery)
+        signature: {
+            name: 'Handtekening/Paraaf',
+            icon: '✍️',
+            // Match keywords often associated with signatures
+            regex: /\b(paraaf|handtekening|ondertekening|akkoord|gezien|datum)\s*[:.]?\s*$/gmi,
+            // Note: The regex finds the label. The user must redraw the box.
+            // Ideally we'd capture the space next to it, but that's hard with text-only.
+            // We'll capture the label itself so they can click 'Jump to'.
+            validate: (match, matchIndex, fullText) => {
+                // Only valid if it appears to be a label (e.g. at end of line or followed by underscores)
+                const nextChars = fullText.substr(matchIndex + match.length, 20);
+                if (/_{3,}/.test(nextChars)) return true; // Followed by lines
+                return true;
+            }
         }
     },
 
@@ -403,6 +455,43 @@ const Detector = {
      * This is the most accurate method for structured documents like soil reports
      */
     detectLabeledFields(text, pageNumber = 1) {
+        const detections = [];
+
+        for (const fieldDef of this.fieldLabels.primary) {
+            const labelRegex = new RegExp(
+                fieldDef.label + '(:\\s*|\\s+)([A-Z][^\\n]{3,50})',
+                'g'
+            );
+
+            // Re-implement basic regex loop for restoration
+            let match;
+            while ((match = labelRegex.exec(text)) !== null) {
+                const value = match[2].trim();
+                if (Detector.shouldExclude(value, match.index, text)) continue;
+
+                detections.push({
+                    type: 'field',
+                    value: value,
+                    label: fieldDef.label,
+                    index: match.index + match[1].length, // approximate
+                    confidence: 0.95
+                });
+            }
+        }
+        return detections;
+    },
+
+    /**
+     * Validate Address: Filter out business addresses
+     */
+    validateAddress(match, matchIndex, fullText) {
+        return validateAddressHelper(match, matchIndex, fullText);
+    },
+
+    /**
+     * Main detection function
+     */
+    findMatches(text, pageNum) {
         const detections = [];
         const seen = new Set();
 
