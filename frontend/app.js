@@ -139,6 +139,18 @@ const App = {
         this.elements.toolSelect.addEventListener('click', () => this.setTool('select'));
         this.elements.toolRedact.addEventListener('click', () => this.setTool('redact'));
 
+        // Detection Results - Click Delegations (Select All)
+        if (this.elements.detectionResults) {
+            this.elements.detectionResults.addEventListener('change', (e) => {
+                if (e.target.classList.contains('select-all-category')) {
+                    const category = e.target.dataset.category;
+                    const isChecked = e.target.checked;
+                    const inputs = this.elements.detectionResults.querySelectorAll(`input[data-category="${category}"]:not(.select-all-category)`);
+                    inputs.forEach(input => input.checked = isChecked);
+                }
+            });
+        }
+
         // Auto-detect: Use AI if key is set, otherwise standard
         this.elements.btnDetect.addEventListener('click', () => {
             const hasKey = typeof MistralService !== 'undefined' && !!MistralService.getApiKey();
