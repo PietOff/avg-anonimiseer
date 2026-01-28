@@ -239,7 +239,7 @@ const Detector = {
         'nederland', 'amsterdam', 'rotterdam', 'utrecht', 'eindhoven',
         'leeuwarden', 'groningen', 'arnhem', 'nijmegen', 'tilburg',
         'den haag', 'haarlem', 'almere', 'breda', 'amersfoort',
-        'reijndersbuurt', 'arendstuin',
+        'reijndersbuurt', 'arendstuin', 'fietspad', 'huisnummer', 'toevoeging',
         // Months
         'januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
         'augustus', 'september', 'oktober', 'november', 'december',
