@@ -638,33 +638,32 @@ const App = {
                 deleteBtn.className = 'redaction-delete-btn';
                 deleteBtn.innerHTML = '✕';
                 deleteBtn.title = 'Verwijder redactie';
-                deleteBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
+                deleteBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation(); // Crucial
+                    console.log('Delete button clicked for:', redaction);
 
-                    // FEATURE: Global Deletion
-                    // If this redaction has a known value, delete ALL instances of it
-                    if (redaction.value && redaction.type !== 'manual') {
-                        // Also add to ignore list so it doesn't come back
-                        if (typeof Detector !== 'undefined' && Detector.ignoreWord) {
-                            Detector.ignoreWord(redaction.value);
+                    try {
+                        // FEATURE: Global Deletion
+                        if (redaction.value && redaction.type !== 'manual') {
+                            if (typeof Detector !== 'undefined' && Detector.ignoreWord) {
+                                Detector.ignoreWord(redaction.value);
+                            }
+                            console.log('Removing globally:', redaction.value);
+                            this.removeRedactionGlobally(redaction.value);
+                        } else if (redaction.value) {
+                            console.log('Removing manual w/ value globally:', redaction.value);
+                            this.removeRedactionGlobally(redaction.value);
+                        } else {
+                            console.log('Removing single redaction:', redaction.id);
+                            Redactor.removeRedaction(redaction.id);
                         }
-                        console.log('Added to ignore list:', redaction.value);
-
-                        // Remove GLOBALLY
-                        this.removeRedactionGlobally(redaction.value);
-                    } else if (redaction.value) {
-                        // Even for manual ones, if they have a value attached (from learning), delete global
-                        // Ask for confirmation? For now, imply "Delete One = Delete All" as requested
-                        this.removeRedactionGlobally(redaction.value);
-
-                        // If it was manual/learned, we should probably unlearn it too?
-                        // Detector.ignoreWord(redaction.value); // Maybe safest to ignore it now
-                    } else {
-                        // Fallback for empty value redactions
-                        Redactor.removeRedaction(redaction.id);
+                    } catch (err) {
+                        console.error('Delete failed:', err);
+                        alert('Fout bij verwijderen: ' + err.message);
                     }
 
-                    this.renderAllRedactions();
+                    // Force re-render
+                    await this.renderAllRedactions();
                     this.updateRedactionsList();
                 });
                 box.appendChild(deleteBtn);
@@ -1059,6 +1058,122 @@ const App = {
         document.querySelectorAll('.pdf-page-wrapper').forEach(wrapper => {
             wrapper.style.cursor = tool === 'redact' ? 'crosshair' : 'default';
         });
+    },
+
+    /**
+     * Render the list of pages in the sidebar
+     */
+    renderPageList() {
+        // Create section if it doesn't exist
+        let sidebarSection = document.querySelector('.page-list-section');
+        if (!sidebarSection) {
+            sidebarSection = document.createElement('div');
+            sidebarSection.className = 'sidebar-section page-list-section';
+            sidebarSection.innerHTML = '<h3>Pagina\'s</h3>';
+
+            // Find correct place to insert (before Redactions)
+            const sidebar = this.elements.detectionsList.closest('.sidebar');
+            const redactionsSection = this.elements.redactionsList.closest('.sidebar-section');
+            if (sidebar && redactionsSection) {
+                sidebar.insertBefore(sidebarSection, redactionsSection);
+            }
+        }
+
+        // Clear list
+        let list = sidebarSection.querySelector('.detections-list');
+        if (!list) {
+            list = document.createElement('div');
+            list.className = 'detections-list'; // Reuse styling
+            list.style.maxHeight = '300px';
+            sidebarSection.appendChild(list);
+        } else {
+            list.innerHTML = '';
+        }
+
+        for (let i = 1; i <= this.totalPages; i++) {
+            const item = document.createElement('div');
+            item.className = 'detection-item'; // Reuse styling
+            item.style.justifyContent = 'flex-start';
+            item.style.gap = '10px';
+
+            const isValidated = this.validatedPages.has(i);
+            const statusIcon = isValidated ? '✅' : '📄';
+
+            item.innerHTML = `
+                <span style="font-size: 1.2em">${statusIcon}</span>
+                <span>Pagina ${i}</span>
+            `;
+
+            // Highlight current page
+            if (i === this.currentPage) {
+                item.style.background = 'var(--bg-glass-hover)';
+                item.style.borderLeft = '3px solid var(--accent-primary)';
+            }
+
+            item.addEventListener('click', () => {
+                this.goToPage(i);
+            });
+
+            list.appendChild(item);
+        }
+    },
+
+    /**
+     * Render the list of pages in the sidebar
+     */
+    renderPageList() {
+        // Create section if it doesn't exist
+        let sidebarSection = document.querySelector('.page-list-section');
+        if (!sidebarSection) {
+            sidebarSection = document.createElement('div');
+            sidebarSection.className = 'sidebar-section page-list-section';
+            sidebarSection.innerHTML = '<h3>Pagina\'s</h3>';
+
+            // Find correct place to insert (before Redactions)
+            const sidebar = this.elements.detectionsList.closest('.sidebar');
+            const redactionsSection = this.elements.redactionsList.closest('.sidebar-section');
+            if (sidebar && redactionsSection) {
+                sidebar.insertBefore(sidebarSection, redactionsSection);
+            }
+        }
+
+        // Clear list
+        let list = sidebarSection.querySelector('.detections-list');
+        if (!list) {
+            list = document.createElement('div');
+            list.className = 'detections-list'; // Reuse styling
+            list.style.maxHeight = '300px';
+            sidebarSection.appendChild(list);
+        } else {
+            list.innerHTML = '';
+        }
+
+        for (let i = 1; i <= this.totalPages; i++) {
+            const item = document.createElement('div');
+            item.className = 'detection-item'; // Reuse styling
+            item.style.justifyContent = 'flex-start';
+            item.style.gap = '10px';
+
+            const isValidated = this.validatedPages.has(i);
+            const statusIcon = isValidated ? '✅' : '📄';
+
+            item.innerHTML = `
+                <span style="font-size: 1.2em">${statusIcon}</span>
+                <span>Pagina ${i}</span>
+            `;
+
+            // Highlight current page
+            if (i === this.currentPage) {
+                item.style.background = 'var(--bg-glass-hover)';
+                item.style.borderLeft = '3px solid var(--accent-primary)';
+            }
+
+            item.addEventListener('click', () => {
+                this.goToPage(i);
+            });
+
+            list.appendChild(item);
+        }
     },
 
     /**
