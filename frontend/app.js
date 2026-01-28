@@ -1368,7 +1368,13 @@ const App = {
                         <span class="detection-category-title">
                             ${data.icon} ${data.name}
                         </span>
-                        <span class="detection-count">${data.items.length}</span>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <label style="font-size:0.8rem; cursor:pointer; color:var(--primary); display:flex; align-items:center; gap:0.25rem;">
+                                <input type="checkbox" class="select-all-category" data-category="${category}" checked>
+                                Alles
+                            </label>
+                            <span class="detection-count">${data.items.length}</span>
+                        </div>
                     </div>
                     <div class="detection-category-items">
                         ${sortedKeys.map((key, idx) => {

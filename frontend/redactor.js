@@ -246,6 +246,19 @@ const Redactor = {
     },
 
     /**
+     * Convert coordinates from PDF space to canvas space
+     * Inverse of canvasToPdfCoords
+     */
+    pdfToCanvasCoords(pdfBounds, pageHeight, scale) {
+        return {
+            x: pdfBounds.x * scale,
+            y: (pageHeight - pdfBounds.y - pdfBounds.height) * scale,
+            width: pdfBounds.width * scale,
+            height: pdfBounds.height * scale
+        };
+    },
+
+    /**
      * Convert coordinates from canvas space to PDF space
      * PDF uses bottom-left origin, canvas uses top-left
      */
