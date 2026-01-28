@@ -1823,8 +1823,8 @@ const App = {
                 itemsHtml += `
                     <div class="detection-item" style="${style}">
         <div style="flex:1; overflow:hidden;">
-            <span class="type">${item.icon || '🔹'} ${item.name}</span><br>
-                <span class="value" title="${item.value}">${this.maskValue(item.value)}</span>
+            <span class="type">${item.icon || '🔹'} ${item.name} <span style="font-size:0.8em; opacity:0.7;">(P${item.page})</span></span><br>
+            <span class="value" title="${item.value}">${item.value}</span>
         </div>
                     </div>
     `;
