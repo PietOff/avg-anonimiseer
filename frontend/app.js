@@ -1704,7 +1704,7 @@ const App = {
                         `;
             }).join('')}
                     </div>
-                </div >
+                </div>
     `;
         }
 
