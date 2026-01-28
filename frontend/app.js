@@ -405,6 +405,7 @@ const App = {
      * Helper: Toggle page validation status
      */
     togglePageValidation(pageNum, isValidated) {
+        console.log(`Toggling page ${pageNum} to ${isValidated}`);
         if (isValidated) {
             this.validatedPages.add(pageNum);
         } else {
@@ -415,12 +416,22 @@ const App = {
         if (wrapper) {
             const label = wrapper.querySelector('.validation-status-text');
             const canvasWrapper = wrapper.querySelector('.canvas-wrapper');
+            const checkbox = wrapper.querySelector('.validation-checkbox');
 
             label.textContent = isValidated ? '✅ Gecontroleerd' : 'Markeer als gecontroleerd';
-            if (isValidated) canvasWrapper.classList.add('page-validated');
-            else canvasWrapper.classList.remove('page-validated');
+
+            if (isValidated) {
+                canvasWrapper.classList.add('page-validated');
+            } else {
+                canvasWrapper.classList.remove('page-validated');
+            }
+
+            // Force checkbox state (fix for unchecking issue)
+            if (checkbox) checkbox.checked = isValidated;
         }
+
         this.updateValidationProgress();
+        if (this.renderPageList) this.renderPageList(); // Sync sidebar if exists
     },
 
     /**
