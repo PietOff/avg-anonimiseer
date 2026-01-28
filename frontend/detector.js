@@ -103,7 +103,7 @@ const Detector = {
             name: 'Adres',
             icon: '🏠',
             regex: /\b[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:straat|laan|weg|plein|singel|gracht|kade|dijk|hof|steeg|pad|dreef|boulevard)\s+\d+[a-z]?(?:\s*[-\/]\s*\d+)?\b/gi,
-            validate: () => true
+            validate: (match, matchIndex, fullText) => Detector.validateAddress(match, matchIndex, fullText)
         },
 
         // Cadastral numbers (kadastrale nummers - common in soil reports)
