@@ -1380,7 +1380,7 @@ const App = {
                             <label class="detection-check-item">
                                 <input type="checkbox" 
                                        data-category="${category}" 
-                                       data-value="${this.escapeRegex(key)}"
+                                       data-value="${encodeURIComponent(key)}"
                                        ${group.selected ? 'checked' : ''}>
                                 <div style="display:flex; flex-direction:column; line-height:1.2;">
                                     <span class="value">${this.maskValue(group.value)} ${countLabel}</span>
@@ -1415,14 +1415,14 @@ const App = {
 
         for (const checkbox of checkboxes) {
             const category = checkbox.dataset.category;
-            const value = checkbox.dataset.value;
+            const value = decodeURIComponent(checkbox.dataset.value);
 
             const categoryData = this.currentDetections.byCategory[category];
             if (categoryData && categoryData.items) {
                 // Determine matches by value
                 const matches = categoryData.items.filter(item => {
                     // Normalize comparison
-                    return this.escapeRegex(item.value.trim()) === value;
+                    return item.value.trim() === value;
                 });
 
                 itemsToRedact.push(...matches);
