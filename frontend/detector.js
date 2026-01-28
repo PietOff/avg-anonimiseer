@@ -102,7 +102,7 @@ const Detector = {
         address: {
             name: 'Adres',
             icon: '🏠',
-            regex: /\b[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:straat|laan|weg|plein|singel|gracht|kade|dijk|hof|steeg|pad|dreef)\s+\d+[a-z]?(?:\s*[-\/]\s*\d+)?\b/gi,
+            regex: /\b[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:straat|laan|weg|plein|singel|gracht|kade|dijk|hof|steeg|pad|dreef|boulevard)\s+\d+[a-z]?(?:\s*[-\/]\s*\d+)?\b/gi,
             validate: () => true
         },
 
@@ -118,7 +118,18 @@ const Detector = {
     // Name patterns (harder to detect reliably)
     namePatterns: {
         // Common Dutch name prefixes that might indicate a name follows
-        prefixes: ['de heer', 'mevrouw', 'mevr.', 'dhr.', 'mr.', 'dr.', 'ir.', 'prof.', 'ing.', 'drs.', 'bc.', 'ds.', 'fa.'],
+        prefixes: [
+            // Standard titles
+            'de heer', 'mevrouw', 'mevr.', 'dhr.', 'mr.', 'dr.', 'ir.', 'prof.', 'ing.', 'drs.', 'bc.', 'ds.', 'fa.', 'fam.',
+            // Governance & Roles (from user feedback)
+            'wethouder', 'burgemeester', 'secretaris', 'griffier', 'voorzitter', 'directeur',
+            'inspecteur', 'behandelaar', 'saneerder', 'coördinator', 'adviseur', 'projectleider',
+            'contactpersoon', 'opdrachtgever', 'aanvrager', 'melder', 'indiener', 'auteur', 'steller',
+            // Context triggers
+            'geachte', 'beste', 't.a.v.', 'attentie van', 'namens',
+            'ingediend door', 'uitgevoerd door', 'behandeld door', 'verzonden door', 'opgesteld door',
+            'afschrift aan', 'terecht bij', 'akkoord', 'paraaf', 'handtekening'
+        ],
         // Pattern for capitalized words (potential names)
         capitalizedWords: /\b[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\s+(?:van|de|der|den|het|ten|ter|te)\s+)?[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+\b/g
     },
@@ -382,9 +393,8 @@ const Detector = {
         ],
         // Professional labels - should NOT be redacted
         professional: [
-            'adviesbureau', 'laboratorium', 'uitvoerder', 'veldwerker',
             'projectleider', 'rapporteur', 'opsteller', 'gecertificeerd',
-            'beoordelaar', 'monsternemer', 'analist'
+            'beoordelaar', 'monsternemer', 'analist', 'behandeld', 'ingediend', 'uitgevoerd'
         ]
     },
 
