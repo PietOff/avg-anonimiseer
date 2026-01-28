@@ -16,7 +16,7 @@ Hosted on Render to run the Python AI Proxy securely.
    - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 4. **Environment Variables** (Advanced):
    - Key: `MISTRAL_API_KEY`
-   - Value: `RjhyR0eAckefARBT6V2x88nPAIBlk961`
+   - Value: `YOUR_MISTRAL_API_KEY` (Get one at console.mistral.ai)
 5. Click **Deploy**.
 6. **Copy the URL** when done (e.g., `https://avg-anonimiseer-backend.onrender.com`).
 

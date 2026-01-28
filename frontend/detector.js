@@ -255,7 +255,25 @@ const Detector = {
         'het', 'deze', 'dit', 'dat', 'een', 'elke', 'ieder', 'beide',
         // Environmental values
         'interventiewaarde', 'streefwaarde', 'tussenwaarde', 'achtergrondwaarde',
-        'normwaarde', 'veiligheid', 'vrijgave', 'overschrijding', 'indicatief'
+        'normwaarde', 'veiligheid', 'vrijgave', 'overschrijding', 'indicatief',
+        // Common false positives in letters/reports
+        'geachte', 'beste', 'betreft', 'ons', 'uw', 'kenmerk', 'referentie',
+        'bijlage', 'pagina', 'blad', 'van', 'voor', 'aan', 'door',
+        'met', 'over', 'onder', 'bij', 'inzake', 'namens',
+        'afdeling', 'dienst', 'bureau', 'team', 'cluster', 'sector',
+        'directie', 'bestuur', 'college', 'raad', 'staten',
+        'provinciale', 'gedeputeerde', 'gemeenteraad', 'kamer',
+        'fractie', 'commissie', 'werkgroep', 'projectgroep', 'stuurgroep',
+        'klankbordgroep', 'bewoners', 'omwonenden', 'belanghebbenden',
+        'burgers', 'inwoners', 'deelnemers', 'bezoeker', 'aanwezigen',
+        // Legal/Policy
+        'verordening', 'bestemmingsplan', 'omgevingsplan', 'structuurvisie',
+        'bouwbesluit', 'woningwet', 'gemeentewet', 'awb', 'wob', 'woo',
+        'zienswijze', 'bezwaar', 'beroep', 'voorlopige', 'voorziening',
+        'uitspraak', 'vonnis', 'beschikking', 'besluit', 'vergunning',
+        'ontheffing', 'melding', 'aanvraag', 'verzoek', 'sommatie',
+        'ingebrekestelling', 'aansprakelijkstelling', 'overeenkomst',
+        'contract', 'convenant', 'intentieverklaring', 'samenwerkingsovereenkomst'
     ],
 
     /**
@@ -740,7 +758,8 @@ const Detector = {
                     startIndex: match.index,
                     endIndex: match.index + match[0].length,
                     confidence: 'low',
-                    selected: false // Do not auto-select (too risky for false positives like "Rare Dingen")
+                    confidence: 'low',
+                    selected: false // FALSE POSITIVE FIX: Do not auto-select generic name matches. User must opt-in.
                 });
             }
         }
