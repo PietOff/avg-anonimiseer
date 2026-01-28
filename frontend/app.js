@@ -1617,24 +1617,24 @@ const App = {
 
         if (detections.stats.total === 0) {
             this.elements.detectionResults.innerHTML = `
-    < div style = "text-align: center; padding: 2rem;" >
+                <div style="text-align: center; padding: 2rem;">
                     <p style="font-size: 3rem; margin-bottom: 1rem;">✅</p>
                     <p>Geen persoonsgegevens gedetecteerd!</p>
                     <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.5rem;">
                         Tip: Teken handmatig een redactie om het systeem te leren.
                     </p>
-                </div >
-    `;
+                </div>
+            `;
             return;
         }
 
         this.elements.btnApplyDetections.classList.remove('hidden');
 
         let html = `
-    < p style = "margin-bottom: 1rem; color: var(--text-secondary);" >
-        ${detections.stats.total} item(s) gevonden in ${detections.stats.categories} categorie(ën)
-            </p >
-    `;
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
+                ${detections.stats.total} item(s) gevonden in ${detections.stats.categories} categorie(ën)
+            </p>
+        `;
 
         for (const [category, data] of Object.entries(detections.byCategory)) {
             // Group items by value (normalized)
