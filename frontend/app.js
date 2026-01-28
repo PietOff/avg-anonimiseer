@@ -472,22 +472,22 @@ const App = {
             return "";
         }
     },
+},
+
+/**
+ * Render redactions on ALL pages
+ * (Re-adding this method if it was lost or cut off)
+ */
+if (typeof Detector !== 'undefined' && Detector.learnWord) {
+    Detector.learnWord(fullText);
 }
+console.log('Learned word from manual redaction:', fullText);
 
-// Add matched text to learned words - sync with Detector!
-const fullText = matchedText.join(' ').trim();
-if (fullText.length > 2) {
-    // Delegate completely to Detector
-    if (typeof Detector !== 'undefined' && Detector.learnWord) {
-        Detector.learnWord(fullText);
-    }
-    console.log('Learned word from manual redaction:', fullText);
-
-    // FEATURE: Global Redaction (Apply to all)
-    // If the word is significant (>3 chars), try to find and redact it everywhere else
-    if (fullText.length > 3) {
-        this.applyRedactionGlobally(fullText);
-    }
+// FEATURE: Global Redaction (Apply to all)
+// If the word is significant (>3 chars), try to find and redact it everywhere else
+if (fullText.length > 3) {
+    this.applyRedactionGlobally(fullText);
+}
 }
 console.log('Learned word from manual redaction:', fullText);
         } catch (error) {
