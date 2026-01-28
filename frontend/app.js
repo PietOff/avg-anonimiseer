@@ -14,6 +14,10 @@ if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.disableWorker = true;
 }
 
+// DEBUG: Confirm app loads
+console.log('AVG App loading...');
+// alert('AVG App is geladen! (Als je dit ziet, werkt de basis)');
+
 const App = {
     // State
     pdfDoc: null,
@@ -75,7 +79,7 @@ const App = {
             toolRedact: document.getElementById('tool-redact'),
             btnDetect: document.getElementById('btn-detect'),
             btnExport: document.getElementById('btn-export'),
-            btnExport: document.getElementById('btn-export'),
+
             btnClearMetadata: document.getElementById('btn-clear-metadata'),
             btnClearLearning: document.getElementById('btn-clear-learning'),
 
@@ -112,7 +116,10 @@ const App = {
 
 
         // Upload
-        this.elements.uploadZone.addEventListener('click', () => this.elements.fileInput.click());
+        this.elements.uploadZone.addEventListener('click', () => {
+            console.log('Upload zone clicked');
+            this.elements.fileInput.click();
+        });
         this.elements.uploadZone.addEventListener('dragover', (e) => {
             e.preventDefault();
             this.elements.uploadZone.classList.add('drag-over');
@@ -122,23 +129,32 @@ const App = {
         });
         this.elements.uploadZone.addEventListener('drop', (e) => {
             e.preventDefault();
+            console.log('File dropped');
             this.elements.uploadZone.classList.remove('drag-over');
             const file = e.dataTransfer.files[0];
-            if (file) this.loadFile(file);
+            if (file) {
+                console.log('File detected:', file.name);
+                this.loadFile(file);
+            }
         });
 
         this.elements.fileInput.addEventListener('change', (e) => {
-            if (e.target.files[0]) this.loadFile(e.target.files[0]);
+            console.log('File input changed');
+            if (e.target.files[0]) {
+                console.log('File selected:', e.target.files[0].name);
+                this.loadFile(e.target.files[0]);
+            }
         });
         this.elements.browseBtn.addEventListener('click', (e) => {
             e.stopPropagation();
+            console.log('Browse button clicked');
             this.elements.fileInput.click();
         });
 
         // Toolbar
         this.elements.btnBack.addEventListener('click', () => this.resetToUpload());
-        // Toolbar
-        this.elements.btnBack.addEventListener('click', () => this.resetToUpload());
+
+
         this.elements.toolSelect.addEventListener('click', () => this.setTool('select'));
         this.elements.toolRedact.addEventListener('click', () => this.setTool('redact'));
 
@@ -273,6 +289,9 @@ const App = {
         this.pageCanvases = [];
         this.pageContainers = [];
 
+        // Update validation progress bar
+        this.updateValidationProgress();
+
         for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
             const page = await this.pdfDoc.getPage(pageNum);
             const viewport = page.getViewport({ scale: this.scale });
@@ -280,10 +299,35 @@ const App = {
             // Create page wrapper
             const pageWrapper = document.createElement('div');
             pageWrapper.className = 'pdf-page-wrapper';
+            pageWrapper.id = `page-wrapper-${pageNum}`;
             pageWrapper.dataset.page = pageNum;
             pageWrapper.style.position = 'relative';
             pageWrapper.style.marginBottom = '20px';
             pageWrapper.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+
+            // --- VALIDATION HEADER START ---
+            const validationHeader = document.createElement('div');
+            validationHeader.className = 'page-validation-header';
+            validationHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; background: var(--bg-secondary); padding: 0.5rem; border-radius: 4px;';
+
+            const isChecked = this.validatedPages.has(pageNum);
+            const statusText = isChecked ? '✅ Gecontroleerd' : 'Markeer als gecontroleerd';
+
+            validationHeader.innerHTML = `
+                <div class="page-label" style="font-weight: bold;">Pagina ${pageNum}</div>
+                <label class="validation-toggle" style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" class="validation-checkbox" data-page="${pageNum}" ${isChecked ? 'checked' : ''}>
+                    <span class="validation-status-text" style="font-size: 0.9rem; color: var(--text-color);">${statusText}</span>
+                </label>
+            `;
+            pageWrapper.appendChild(validationHeader);
+            // --- VALIDATION HEADER END ---
+
+            // Canvas Wrapper (Visual indication border)
+            const canvasWrapper = document.createElement('div');
+            canvasWrapper.className = 'canvas-wrapper';
+            canvasWrapper.style.position = 'relative';
+            if (isChecked) canvasWrapper.classList.add('page-validated');
 
             // Create canvas
             const canvas = document.createElement('canvas');
@@ -300,6 +344,8 @@ const App = {
                 viewport: viewport
             }).promise;
 
+            canvasWrapper.appendChild(canvas);
+
             // Create redaction layer for this page
             const redactionLayer = document.createElement('div');
             redactionLayer.className = 'page-redaction-layer';
@@ -312,8 +358,9 @@ const App = {
                 height: ${canvas.height}px;
                 pointer-events: none;
             `;
+            canvasWrapper.appendChild(redactionLayer);
 
-            // Page number indicator
+            // Page number indicator (now redundant with header but kept for style)
             const pageIndicator = document.createElement('div');
             pageIndicator.className = 'page-indicator';
             pageIndicator.textContent = `Pagina ${pageNum}`;
@@ -328,14 +375,19 @@ const App = {
                 font-size: 12px;
                 pointer-events: none;
             `;
+            canvasWrapper.appendChild(pageIndicator);
 
-            pageWrapper.appendChild(canvas);
-            pageWrapper.appendChild(redactionLayer);
-            pageWrapper.appendChild(pageIndicator);
+            pageWrapper.appendChild(canvasWrapper);
             container.appendChild(pageWrapper);
 
             this.pageCanvases.push(canvas);
             this.pageContainers.push(pageWrapper);
+
+            // Bind checkbox event
+            const checkbox = validationHeader.querySelector('.validation-checkbox');
+            checkbox.addEventListener('change', (e) => {
+                this.togglePageValidation(pageNum, e.target.checked);
+            });
 
             // Add mouse events for drawing on this page
             this.addPageMouseEvents(pageWrapper, pageNum, canvas, redactionLayer);
@@ -347,6 +399,52 @@ const App = {
 
         // Render any existing redactions
         this.renderAllRedactions();
+    },
+
+    /**
+     * Helper: Toggle page validation status
+     */
+    togglePageValidation(pageNum, isValidated) {
+        if (isValidated) {
+            this.validatedPages.add(pageNum);
+        } else {
+            this.validatedPages.delete(pageNum);
+        }
+
+        const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+        if (wrapper) {
+            const label = wrapper.querySelector('.validation-status-text');
+            const canvasWrapper = wrapper.querySelector('.canvas-wrapper');
+
+            label.textContent = isValidated ? '✅ Gecontroleerd' : 'Markeer als gecontroleerd';
+            if (isValidated) canvasWrapper.classList.add('page-validated');
+            else canvasWrapper.classList.remove('page-validated');
+        }
+        this.updateValidationProgress();
+    },
+
+    /**
+     * Helper: Update validation progress bar
+     */
+    updateValidationProgress() {
+        const count = this.validatedPages.size;
+        const total = this.pdfDoc ? this.pdfDoc.numPages : 0;
+        const percent = total > 0 ? (count / total) * 100 : 0;
+
+        const bar = document.getElementById('validation-bar');
+        const countEl = document.getElementById('validation-count');
+        const totalEl = document.getElementById('validation-total');
+        const fillEl = document.getElementById('validation-progress-fill');
+
+        if (bar) {
+            bar.classList.remove('hidden');
+            if (countEl) countEl.textContent = count;
+            if (totalEl) totalEl.textContent = total;
+            if (fillEl) {
+                fillEl.style.width = `${percent}%`;
+                fillEl.style.backgroundColor = count === total ? '#10b981' : '#2563eb';
+            }
+        }
     },
 
     /**
@@ -1438,7 +1536,7 @@ const App = {
 
                 // Calculate width: use provided width or fallback estimate
                 const width = item.width || (item.str.length * fontHeight * 0.6);
-                const height = fontHeight;
+
 
                 minX = Math.min(minX, x);
                 minY = Math.min(minY, y);
