@@ -35,6 +35,8 @@ const App = {
     // Page canvases for continuous scrolling
     pageCanvases: [],
     pageContainers: [],
+    pageDimensions: [], // Store dimensions per page
+
 
 
     // learnedWords/ignoredWords are now managed by Detector module
@@ -294,7 +296,15 @@ const App = {
 
         for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
             const page = await this.pdfDoc.getPage(pageNum);
+            const page = await this.pdfDoc.getPage(pageNum);
             const viewport = page.getViewport({ scale: this.scale });
+
+            // Store unscaled dimensions for coordinate conversion
+            const unscaledViewport = page.getViewport({ scale: 1.0 });
+            this.pageDimensions[pageNum] = {
+                width: unscaledViewport.width,
+                height: unscaledViewport.height
+            };
 
             // Create page wrapper
             const pageWrapper = document.createElement('div');
@@ -632,7 +642,10 @@ const App = {
                 box.dataset.id = redaction.id;
                 box.style.pointerEvents = 'auto';
 
-                const pageHeight = 842;
+                // Use actual page height if available, otherwise fallback to A4
+                const dims = this.pageDimensions[pageNum];
+                const pageHeight = dims ? dims.height : 842;
+
                 const canvasBounds = Redactor.pdfToCanvasCoords(
                     redaction.bounds,
                     pageHeight,
