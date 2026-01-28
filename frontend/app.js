@@ -25,6 +25,9 @@ const App = {
     isDrawing: false,
     drawStart: null,
 
+    // Validation State
+    validatedPages: new Set(),
+
     // Page canvases for continuous scrolling
     pageCanvases: [],
     pageContainers: [],
@@ -785,22 +788,36 @@ const App = {
         console.log(`Removing global redactions for: "${value}"`);
         let count = 0;
 
-        // Iterate over all pages in Redactor
-        Object.keys(Redactor.redactions).forEach(pageNum => {
-            const pageRedactions = Redactor.redactions[pageNum];
+        // Iterate over Map (pageNum -> redactionsArray)
+        // Check if Redactor.redactions is Map or Object to be safe
+        const isMap = Redactor.redactions instanceof Map;
 
-            // Filter out redactions that match the value
-            // We need to keep ones that DO NOT match
-            const toKeep = pageRedactions.filter(r => {
-                if (r.value === value) {
-                    count++;
-                    return false; // Remove
+        if (isMap) {
+            for (const [pageNum, pageRedactions] of Redactor.redactions) {
+                const initialLength = pageRedactions.length;
+                const keptRedactions = pageRedactions.filter(r => r.value !== value);
+
+                if (keptRedactions.length < initialLength) {
+                    count += (initialLength - keptRedactions.length);
+                    if (keptRedactions.length === 0) {
+                        Redactor.redactions.delete(pageNum);
+                    } else {
+                        Redactor.redactions.set(pageNum, keptRedactions);
+                    }
                 }
-                return true; // Keep
+            }
+        } else {
+            // Fallback if it's somehow an Object (shouldn't be, but robust)
+            Object.keys(Redactor.redactions).forEach(pageNum => {
+                const pageRedactions = Redactor.redactions[pageNum];
+                const initialLength = pageRedactions.length;
+                const keptRedactions = pageRedactions.filter(r => r.value !== value);
+                if (keptRedactions.length < initialLength) {
+                    count += (initialLength - keptRedactions.length);
+                    Redactor.redactions[pageNum] = keptRedactions;
+                }
             });
-
-            Redactor.redactions[pageNum] = toKeep;
-        });
+        }
 
         if (count > 0) {
             this.showToast(`${count} instanties van "${value}" verwijderd.`);
