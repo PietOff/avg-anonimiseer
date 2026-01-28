@@ -1411,22 +1411,36 @@ const App = {
      */
     async applyDetections() {
         const checkboxes = this.elements.detectionResults.querySelectorAll('input[type="checkbox"]:checked');
+        const itemsToRedact = [];
 
         for (const checkbox of checkboxes) {
             const category = checkbox.dataset.category;
-            const index = parseInt(checkbox.dataset.index);
-            const item = this.currentDetections.byCategory[category].items[index];
+            const value = checkbox.dataset.value;
 
+            const categoryData = this.currentDetections.byCategory[category];
+            if (categoryData && categoryData.items) {
+                // Determine matches by value
+                const matches = categoryData.items.filter(item => {
+                    // Normalize comparison
+                    return this.escapeRegex(item.value.trim()) === value;
+                });
+
+                itemsToRedact.push(...matches);
+            }
+        }
+
+        // Apply redactions
+        for (const item of itemsToRedact) {
             let bounds = item.bounds;
             if (!bounds) {
                 const textItems = this.textItemsPerPage?.get(item.page);
                 if (textItems) {
-                    bounds = this.findTextBounds(item.value, 0, textItems, null);
+                    bounds = this.findTextBounds(item.value, item.startIndex, textItems, null);
                 }
                 if (!bounds) {
                     bounds = {
                         x: 50,
-                        y: 750 - (index * 20),
+                        y: 750,
                         width: Math.max(item.value.length * 8, 50),
                         height: 16
                     };
