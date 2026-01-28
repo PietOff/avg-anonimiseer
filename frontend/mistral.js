@@ -7,8 +7,8 @@ const MistralService = {
     // Default to localhost for dev, but this should be configured!
     // For Vercel/Render, you might want to hardcode the Render URL 
     // or use a relative path if deployed on same domain (unlikely here).
-    // REPLACE THIS WITH YOUR RENDER BACKEND URL AFTER DEPLOYMENT
-    BACKEND_URL: 'http://127.0.0.1:8000/api/analyze',
+    // Backend URL (Update this after deploying backend)
+    BACKEND_URL: 'https://avg-anonimiseer.onrender.com/api/analyze',
 
     /**
      * Analyze text using the Backend Proxy
