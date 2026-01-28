@@ -296,7 +296,6 @@ const App = {
 
         for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
             const page = await this.pdfDoc.getPage(pageNum);
-            const page = await this.pdfDoc.getPage(pageNum);
             const viewport = page.getViewport({ scale: this.scale });
 
             // Store unscaled dimensions for coordinate conversion
