@@ -79,7 +79,8 @@ const Redactor = {
     getAllRedactions() {
         const all = [];
         for (const [pageNumber, redactions] of this.redactions) {
-            all.push(...redactions);
+            // Inject page number into each redaction object for the UI
+            all.push(...redactions.map(r => ({ ...r, page: pageNumber })));
         }
         return all;
     },
