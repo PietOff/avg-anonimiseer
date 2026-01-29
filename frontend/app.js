@@ -1262,11 +1262,25 @@ const App = {
      * Zoom in/out
      */
     zoom(delta) {
-        this.scale = Math.max(0.5, Math.min(3, this.scale + delta));
+        const container = this.elements.pdfViewer;
+        const currentScale = this.scale;
+        const newScale = Math.max(0.5, Math.min(3, currentScale + delta));
+
+        // Calculate center point relative to content height
+        // scrollTop + half viewport height = visual center
+        const viewCenterRatio = (container.scrollTop + container.clientHeight / 2) / container.scrollHeight;
+
+        this.scale = newScale;
         this.elements.zoomLevel.textContent = Math.round(this.scale * 100) + '%';
 
         if (this.pdfDoc) {
-            this.renderAllPages();
+            this.renderAllPages().then(() => {
+                // Restore center point
+                // New scrollHeight is roughly old * (newScale / oldScale)
+                // But safer to just take the new scrollHeight
+                const newScrollTop = (viewCenterRatio * container.scrollHeight) - (container.clientHeight / 2);
+                container.scrollTop = newScrollTop;
+            });
         } else if (this.currentImage) {
             this.renderImagePage(this.currentImage);
         }
