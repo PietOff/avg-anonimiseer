@@ -102,3 +102,65 @@ Each object must have:
     except Exception as e:
         print(f"Server Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+class AnalyzeImageRequest(BaseModel):
+    image: str # Base64 encoded image
+    pageNum: int
+
+@app.post("/api/analyze-image")
+async def analyze_image(request: AnalyzeImageRequest):
+    if not MISTRAL_API_KEY:
+        raise HTTPException(status_code=500, detail="Mistral API Key not configured.")
+
+    # Use Pixtral 12B for Vision
+    VISION_MODEL = "pixtral-12b-2409" 
+
+    system_prompt = """
+    You are a document analysis AI. 
+    Analyze the image and locate all handwritten signatures and initials (parafen).
+    
+    Return a JSON object with a key "signatures".
+    The value should be a list of bounding boxes in the format: [ymin, xmin, ymax, xmax].
+    Coordinates should be normalized (0-1000).
+    Example: {"signatures": [[100, 200, 150, 400], ...]}
+    
+    If no signatures are found, return {"signatures": []}.
+    ONLY return JSON.
+    """
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                MISTRAL_API_URL,
+                json={
+                    "model": VISION_MODEL,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": system_prompt},
+                                {"type": "image_url", "image_url": {"url": request.image}} 
+                            ]
+                        }
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.1
+                },
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {MISTRAL_API_KEY}"
+                },
+                timeout=60.0
+            )
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            
+            import json
+            result = json.loads(content)
+            return result.get("signatures", [])
+
+    except Exception as e:
+        print(f"Vision Error: {str(e)}")
+        # Fallback empty list safely
+        return []
