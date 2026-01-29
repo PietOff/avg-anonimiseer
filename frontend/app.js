@@ -438,7 +438,8 @@ const App = {
     /**
      * Helper: Toggle page validation status
      */
-    togglePageValidation(pageNum, isValidated) {
+    togglePageValidation(pageNum, isValidated, autoAdvance = true) {
+        // ... (existing logic)
         console.log(`Toggling page ${pageNum} to ${isValidated}`);
         if (isValidated) {
             this.validatedPages.add(pageNum);
@@ -460,12 +461,20 @@ const App = {
                 canvasWrapper.classList.remove('page-validated');
             }
 
-            // Force checkbox state (fix for unchecking issue)
+            // Force checkbox state
             if (checkbox) checkbox.checked = isValidated;
         }
 
         this.updateValidationProgress();
-        if (this.renderPageList) this.renderPageList(); // Sync sidebar if exists
+        if (this.renderPageList) this.renderPageList();
+
+        // AUTO-ADVANCE: If validated, go to next page
+        if (isValidated && autoAdvance && pageNum < this.totalPages) {
+            // Small delay for visual feedback
+            setTimeout(() => {
+                this.goToPage(pageNum + 1);
+            }, 300);
+        }
     },
 
     /**
