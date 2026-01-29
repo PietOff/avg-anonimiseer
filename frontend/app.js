@@ -327,17 +327,11 @@ const App = {
         // Update validation progress bar
         this.updateValidationProgress();
 
+        // 1. First, create ALL wrappers in correct order (Synchronous)
+        // This ensures Page 1 is always before Page 2, regardless of render speed.
+        const renderTasks = [];
+
         for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
-            const page = await this.pdfDoc.getPage(pageNum);
-            const viewport = page.getViewport({ scale: this.scale });
-
-            // Store unscaled dimensions for coordinate conversion
-            const unscaledViewport = page.getViewport({ scale: 1.0 });
-            this.pageDimensions[pageNum] = {
-                width: unscaledViewport.width,
-                height: unscaledViewport.height
-            };
-
             // Create page wrapper
             const pageWrapper = document.createElement('div');
             pageWrapper.className = 'pdf-page-wrapper';
@@ -365,64 +359,15 @@ const App = {
             pageWrapper.appendChild(validationHeader);
             // --- VALIDATION HEADER END ---
 
-            // Canvas Wrapper (Visual indication border)
+            // Canvas Wrapper
             const canvasWrapper = document.createElement('div');
             canvasWrapper.className = 'canvas-wrapper';
             canvasWrapper.style.position = 'relative';
             if (isChecked) canvasWrapper.classList.add('page-validated');
-
-            // Create canvas
-            const canvas = document.createElement('canvas');
-            canvas.className = 'pdf-page-canvas';
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            canvas.style.display = 'block';
-
-            const context = canvas.getContext('2d');
-
-            // Render page
-            await page.render({
-                canvasContext: context,
-                viewport: viewport
-            }).promise;
-
-            canvasWrapper.appendChild(canvas);
-
-            // Create redaction layer for this page
-            const redactionLayer = document.createElement('div');
-            redactionLayer.className = 'page-redaction-layer';
-            redactionLayer.dataset.page = pageNum;
-            redactionLayer.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: ${canvas.width}px;
-                height: ${canvas.height}px;
-                pointer-events: none;
-            `;
-            canvasWrapper.appendChild(redactionLayer);
-
-            // Page number indicator (now redundant with header but kept for style)
-            const pageIndicator = document.createElement('div');
-            pageIndicator.className = 'page-indicator';
-            pageIndicator.textContent = `Pagina ${pageNum}`;
-            pageIndicator.style.cssText = `
-                position: absolute;
-                bottom: 8px;
-                right: 8px;
-                background: rgba(0,0,0,0.7);
-                color: white;
-                padding: 4px 8px;
-                border-radius: 4px;
-                font-size: 12px;
-                pointer-events: none;
-            `;
-            canvasWrapper.appendChild(pageIndicator);
-
             pageWrapper.appendChild(canvasWrapper);
-            container.appendChild(pageWrapper);
 
-            this.pageCanvases.push(canvas);
+            // Container Append (Order Guaranteed)
+            container.appendChild(pageWrapper);
             this.pageContainers.push(pageWrapper);
 
             // Bind checkbox event
@@ -431,9 +376,56 @@ const App = {
                 this.togglePageValidation(pageNum, e.target.checked);
             });
 
-            // Add mouse events for drawing on this page
-            this.addPageMouseEvents(pageWrapper, pageNum, canvas, redactionLayer);
+            // 2. Prepare Async Render Task
+            renderTasks.push(async () => {
+                const page = await this.pdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale: this.scale });
+
+                // Store unscaled dimensions
+                const unscaledViewport = page.getViewport({ scale: 1.0 });
+                this.pageDimensions[pageNum] = {
+                    width: unscaledViewport.width,
+                    height: unscaledViewport.height
+                };
+
+                // Create canvas
+                const canvas = document.createElement('canvas');
+                canvas.className = 'pdf-page-canvas';
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                canvas.style.display = 'block';
+
+                const context = canvas.getContext('2d');
+                await page.render({
+                    canvasContext: context,
+                    viewport: viewport
+                }).promise;
+
+                canvasWrapper.appendChild(canvas);
+                this.pageCanvases[pageNum - 1] = canvas; // Store by index
+
+                // Create redaction layer
+                const redactionLayer = document.createElement('div');
+                redactionLayer.className = 'page-redaction-layer';
+                redactionLayer.dataset.page = pageNum;
+                redactionLayer.style.cssText = `
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: ${canvas.width}px;
+                    height: ${canvas.height}px;
+                    pointer-events: none;
+                `;
+                canvasWrapper.appendChild(redactionLayer);
+
+                // Add mouse events
+                this.addPageMouseEvents(pageWrapper, pageNum, canvas, redactionLayer);
+            });
         }
+
+        // 3. Execute all renders in parallel (Performance fix)
+        // We catch errors to avoid one page crash stopping all
+        await Promise.all(renderTasks.map(task => task().catch(err => console.error(err))));
 
         // Update current page indicator
         this.currentPage = 1;
