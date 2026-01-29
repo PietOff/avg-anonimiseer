@@ -577,6 +577,16 @@ const App = {
                             if (typeof Detector !== 'undefined' && Detector.learnWord) {
                                 Detector.learnWord(foundText);
                             }
+
+                            // Global redaction prompt
+                            if (foundText.length > 2) {
+                                // Use setTimeout to allow the UI to update first (show the box)
+                                setTimeout(() => {
+                                    if (confirm(`Tekst gevonden: "${foundText}"\n\nWil je deze tekst in het hele document overal zwartlakken?`)) {
+                                        this.applyRedactionGlobally(foundText);
+                                    }
+                                }, 100);
+                            }
                         }
                     } catch (err) {
                         console.warn("Could not extract text from manual redaction:", err);
