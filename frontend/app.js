@@ -698,16 +698,25 @@ const App = {
      */
     updateCurrentPageFromScroll() {
         const container = this.elements.pdfViewer;
-        const scrollTop = container.scrollTop;
+        if (!container) return;
 
+        const viewCenter = container.scrollTop + (container.clientHeight / 2);
+
+        // Find the page that contains the center point of the view
         for (let i = 0; i < this.pageContainers.length; i++) {
             const pageWrapper = this.pageContainers[i];
-            const offsetTop = pageWrapper.offsetTop - container.offsetTop;
-            const offsetBottom = offsetTop + pageWrapper.offsetHeight;
 
-            if (scrollTop >= offsetTop - 100 && scrollTop < offsetBottom - 100) {
-                this.currentPage = i + 1;
-                this.elements.currentPageEl.textContent = this.currentPage;
+            // Calculate strictly relative to the container scrolling content
+            const pageTop = pageWrapper.offsetTop;
+            const pageBottom = pageTop + pageWrapper.offsetHeight;
+
+            if (viewCenter >= pageTop && viewCenter <= pageBottom) {
+                const newPage = i + 1;
+                if (this.currentPage !== newPage) {
+                    this.currentPage = newPage;
+                    this.elements.currentPageEl.textContent = this.currentPage;
+                    // console.log(`Current page updated to: ${newPage}`);
+                }
                 break;
             }
         }
