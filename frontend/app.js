@@ -1577,7 +1577,22 @@ const App = {
             for (const detection of pageDetections.all) {
                 const bounds = this.findTextBounds(detection.value, detection.startIndex, textItems, viewport);
                 if (bounds) {
+                    // Start with exact text bounds
                     detection.bounds = bounds;
+
+                    // Feature: Auto-expand for signatures
+                    if (detection.type === 'signature') {
+                        // Signatures are usually ABOVE the line "Handtekening"
+                        // Expand significantly upwards
+                        detection.bounds = {
+                            x: bounds.x - 20, // A bit wider
+                            y: bounds.y + bounds.height + 5, // PDF coords: Y is bottom-up. +Y means UP.
+                            width: bounds.width + 100, // Make it wide enough for a signature
+                            height: 60 // Capture 60pts above the text
+                        };
+                        detection.name = "Handtekening (Gebied)";
+                        detection.selected = true; // Auto-select signatures
+                    }
                 }
             }
 
