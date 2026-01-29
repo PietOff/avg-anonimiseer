@@ -1429,7 +1429,11 @@ const App = {
      */
     goToPage(pageNumber) {
         if (pageNumber >= 1 && pageNumber <= this.totalPages && this.pageContainers[pageNumber - 1]) {
-            this.pageContainers[pageNumber - 1].scrollIntoView({ behavior: 'smooth' });
+            // Update state IMMEDIATELY so keyboard shortcuts work right away
+            this.currentPage = pageNumber;
+            this.elements.currentPageEl.textContent = pageNumber;
+
+            this.pageContainers[pageNumber - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
     },
 
