@@ -526,6 +526,9 @@ const App = {
         wrapper.addEventListener('mousedown', (e) => {
             if (this.currentTool !== 'redact') return;
 
+            // Fix: Ignore clicks on validation controls
+            if (e.target.closest('.validation-toggle')) return;
+
             const rect = canvas.getBoundingClientRect();
             this.isDrawing = true;
             this.currentDrawingPage = pageNum;
@@ -809,36 +812,58 @@ const App = {
         console.log(`Applying global redaction for: "${cleanSearch}"`);
         let totalApplied = 0;
 
+        // Create regex for word boundary matching
+        const safeSearch = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`\\b${safeSearch}\\b`, 'i');
+
         for (let i = 1; i <= this.pdfDoc.numPages; i++) {
             const page = await this.pdfDoc.getPage(i);
             const textContent = await page.getTextContent();
             const textItems = textContent.items;
 
-            // Robust Strategy: Normalize matches
-            // 1. Check strict inclusion first
-            // 2. Iterate items to find best matches
-
             for (const item of textItems) {
-                const itemText = item.str.toLowerCase();
+                const itemText = item.str;
 
-                // Check if the item contains the search text 
-                // OR if it's the search text (exact match often better)
-                if (itemText.includes(cleanSearch)) {
+                // Check for match
+                let match = regex.exec(itemText);
 
-                    // Create bounds
-                    const x = item.transform[4];
-                    const y = item.transform[5];
-                    const width = item.width > 0 ? item.width : (item.str.length * 4); // Better fallback
-                    const height = item.height || 10;
+                // Fallback to simple includes if regex fails (e.g. for partial words like 'foo' in 'voetbal' if desired, 
+                // but user likely wants whole words. Let's stick to regex or exact sub-match).
+                // Actually, let's look for all occurrences in the string
+                let startIndex = 0;
+                let searchStr = itemText.toLowerCase();
 
-                    // Bounds check
-                    const isRedacted = this.isAreaRedacted(i, { x, y, width, height });
+                while (searchStr.indexOf(cleanSearch, startIndex) > -1) {
+                    const idx = searchStr.indexOf(cleanSearch, startIndex);
 
-                    if (!isRedacted) {
-                        console.log(`Global match on p${i}: "${item.str}"`);
-                        Redactor.addRedaction(i, { x, y, width, height }, 'learned');
-                        totalApplied++;
+                    // Simple "Word Boundary" Check: 
+                    // Verify char before and after are not letters/numbers
+                    const before = idx > 0 ? searchStr[idx - 1] : ' ';
+                    const after = idx + cleanSearch.length < searchStr.length ? searchStr[idx + cleanSearch.length] : ' ';
+
+                    const isWord = /[^a-z0-9]/i.test(before) && /[^a-z0-9]/i.test(after);
+
+                    if (isWord) {
+                        // Calculate Substring Bounds!
+                        // This is an approximation assuming uniform-ish font width, which is the best we can do without parsing fonts.
+                        // Ideally checking 'item.width' vs 'item.str.length' gives avg char width.
+
+                        const avgCharWidth = item.width / itemText.length;
+                        const matchX = item.transform[4] + (idx * avgCharWidth);
+                        const matchWidth = cleanSearch.length * avgCharWidth;
+                        const y = item.transform[5];
+                        const height = item.height || 10;
+
+                        // Bounds check
+                        const isRedacted = this.isAreaRedacted(i, { x: matchX, y, width: matchWidth, height });
+
+                        if (!isRedacted) {
+                            console.log(`Global match on p${i}: "${itemText.substr(idx, cleanSearch.length)}"`);
+                            Redactor.addRedaction(i, { x: matchX, y, width: matchWidth, height }, 'learned');
+                            totalApplied++;
+                        }
                     }
+                    startIndex = idx + cleanSearch.length;
                 }
             }
         }
