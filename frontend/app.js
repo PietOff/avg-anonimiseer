@@ -1865,28 +1865,24 @@ const App = {
                 const isIgnored = Detector.shouldIgnore ? Detector.shouldIgnore(item.value) : false;
                 const style = isIgnored ? 'opacity: 0.5; text-decoration: line-through;' : '';
                 itemsHtml += `
-                itemsHtml += `
-                    < div class="detection-item" style = "${style}" data - value="${item.value}" >
-                        <div style="flex:1; overflow:hidden;" onclick="document.querySelector('#sidebar-action-handlers').dispatchEvent(new CustomEvent('jump', {detail: {page: ${item.page}, value: '${item.value.replace(/'/g, "\\'")}'
-            }})) ">
-                < span class="type" > ${ item.icon || '🔹' } ${ item.name } <span style="font-size:0.8em; opacity:0.7;">(P${item.page})</span></span ><br>
+                    <div class="detection-item" style="${style}" data-value="${item.value}">
+                        <div style="flex:1; overflow:hidden;" onclick="document.querySelector('#sidebar-action-handlers').dispatchEvent(new CustomEvent('jump', {detail: {page: ${item.page}, value: '${item.value.replace(/'/g, "\\'")}'}}))">
+                            <span class="type">${item.icon || '🔹'} ${item.name} <span style="font-size:0.8em; opacity:0.7;">(P${item.page})</span></span><br>
                             <span class="value" title="${item.value}">${item.value}</span>
                         </div>
-                        <button class="btn-icon-small delete-detection" title="Negeer dit woord" onclick="event.stopPropagation(); document.querySelector('#sidebar-action-handlers').dispatchEvent(new CustomEvent('ignore', {detail: '${item.value.replace(/'/g, "\\'")}'
-    })) ">
+                        <button class="btn-icon-small delete-detection" title="Negeer dit woord" onclick="event.stopPropagation(); document.querySelector('#sidebar-action-handlers').dispatchEvent(new CustomEvent('ignore', {detail: '${item.value.replace(/'/g, "\\'")}'}))">
                             ✕
-                        </button >
-                    </div >
-    `;
-    `;
+                        </button>
+                    </div>
+                `;
             });
-if (allItems.length > 50) {
-    itemsHtml += `<div class="detection-item" style="justify-content:center; color:var(--text-muted)">...en nog ${allItems.length - 50} items</div>`;
-}
-itemsHtml += '</div>';
+            if (allItems.length > 50) {
+                itemsHtml += `<div class="detection-item" style="justify-content:center; color:var(--text-muted)">...en nog ${allItems.length - 50} items</div>`;
+            }
+            itemsHtml += '</div>';
         }
 
-this.elements.detectionsList.innerHTML = `
+        this.elements.detectionsList.innerHTML = `
             <p style="font-size: 0.85rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
                 <strong>${this.currentDetections.stats.total} gevonden</strong> (${applied} toegepast)
                 ${learnedInfo}
@@ -1899,44 +1895,44 @@ this.elements.detectionsList.innerHTML = `
      * Export redacted PDF
      */
     async exportPDF() {
-    try {
-        this.elements.btnExport.disabled = true;
-        this.elements.btnExport.innerHTML = '<span class="spinner" style="width: 16px; height: 16px;"></span> Bezig...';
+        try {
+            this.elements.btnExport.disabled = true;
+            this.elements.btnExport.innerHTML = '<span class="spinner" style="width: 16px; height: 16px;"></span> Bezig...';
 
-        const pdfBytes = await Redactor.exportRedactedPDF();
+            const pdfBytes = await Redactor.exportRedactedPDF();
 
-        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'geanonimiseerd_' + this.elements.filename.textContent;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'geanonimiseerd_' + this.elements.filename.textContent;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
 
-    } catch (error) {
-        console.error('Export error:', error);
-        alert('Fout bij exporteren. Probeer het opnieuw.');
-    } finally {
-        this.elements.btnExport.disabled = false;
-        this.elements.btnExport.innerHTML = '<span>💾</span> Exporteer veilige PDF';
+        } catch (error) {
+            console.error('Export error:', error);
+            alert('Fout bij exporteren. Probeer het opnieuw.');
+        } finally {
+            this.elements.btnExport.disabled = false;
+            this.elements.btnExport.innerHTML = '<span>💾</span> Exporteer veilige PDF';
+        }
+    },
+
+    /**
+     * Handle keyboard shortcuts
+     */
+    handleKeyboard(event) {
+        if (event.key === 'Escape') {
+            this.closeModal();
+        }
+
+        if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+            event.preventDefault();
+            this.exportPDF();
+        }
     }
-},
-
-/**
- * Handle keyboard shortcuts
- */
-handleKeyboard(event) {
-    if (event.key === 'Escape') {
-        this.closeModal();
-    }
-
-    if ((event.ctrlKey || event.metaKey) && event.key === 's') {
-        event.preventDefault();
-        this.exportPDF();
-    }
-}
 };
 
 // Initialize when DOM is ready
