@@ -645,8 +645,42 @@ const App = {
                     (itemY - tolerance <= pdfBounds.y + pdfBounds.height);
 
                 if (xOverlap && yOverlap) {
-                    // console.log(`Found intersection: "${item.str}" at [${itemX}, ${itemY}]`);
                     matchedText.push(item.str.trim());
+                }
+            }
+
+            // FALLBACK: If strict overlap found nothing, find the CLOSEST item
+            // This handles cases where the text layer is slightly offset or the user missed slightly
+            if (matchedText.length === 0) {
+                console.log("Strict overlap failed, trying nearest neighbor...");
+
+                const boxCenterX = pdfBounds.x + (pdfBounds.width / 2);
+                const boxCenterY = pdfBounds.y + (pdfBounds.height / 2);
+
+                let closestItem = null;
+                let minDistance = Infinity;
+                const MAX_DISTANCE = 25; // Search radius (approx 1-2 lines)
+
+                for (const item of textContent.items) {
+                    // Calculate item center
+                    const itemWidth = item.width || (item.str.length * 4);
+                    const itemHeight = item.height || 10;
+                    const itemCenterX = item.transform[4] + (itemWidth / 2);
+                    const itemCenterY = item.transform[5] + (itemHeight / 2);
+
+                    const dx = boxCenterX - itemCenterX;
+                    const dy = boxCenterY - itemCenterY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < minDistance && dist < MAX_DISTANCE) {
+                        minDistance = dist;
+                        closestItem = item;
+                    }
+                }
+
+                if (closestItem) {
+                    console.log(`Found nearest item: "${closestItem.str}" (dist: ${minDistance.toFixed(2)})`);
+                    return closestItem.str.trim();
                 }
             }
 
