@@ -772,8 +772,10 @@ const App = {
                 deleteBtn.className = 'redaction-delete-btn';
                 deleteBtn.innerHTML = '✕';
                 deleteBtn.title = 'Verwijder redactie';
-                deleteBtn.addEventListener('click', async (e) => {
+                // Use mousedown to prevent drag-start from interfering
+                deleteBtn.addEventListener('mousedown', async (e) => {
                     e.stopPropagation(); // Crucial
+                    e.preventDefault();  // Prevent focus theft
                     console.log('Delete button clicked for:', redaction);
 
                     try {
