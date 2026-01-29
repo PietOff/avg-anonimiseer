@@ -775,38 +775,43 @@ const App = {
      * Find and redact a specific word/phrase across the entire document
      */
     async applyRedactionGlobally(textToRedact) {
-        if (!this.pdfDoc) return;
+        if (!this.pdfDoc || !textToRedact) return;
 
-        console.log(`Applying global redaction for: "${textToRedact}"`);
+        const cleanSearch = textToRedact.trim().toLowerCase();
+        if (cleanSearch.length < 2) return;
+
+        console.log(`Applying global redaction for: "${cleanSearch}"`);
         let totalApplied = 0;
 
         for (let i = 1; i <= this.pdfDoc.numPages; i++) {
             const page = await this.pdfDoc.getPage(i);
             const textContent = await page.getTextContent();
-
-            // Reconstruct full text with items map for coordinate lookup
             const textItems = textContent.items;
-            const fullPageText = textItems.map(item => item.str).join('');
 
-            // Simple match?
-            if (fullPageText.toLowerCase().includes(textToRedact.toLowerCase())) {
-                // Find distinct occurrences
-                for (const item of textItems) {
-                    if (item.str.toLowerCase().includes(textToRedact.toLowerCase())) {
-                        // Create a rough bounding box for this item
-                        const x = item.transform[4];
-                        const y = item.transform[5];
-                        const width = item.width;
-                        const height = item.height || 12; // Fallback height
+            // Robust Strategy: Normalize matches
+            // 1. Check strict inclusion first
+            // 2. Iterate items to find best matches
 
-                        // Check if already redacted
-                        const isRedacted = this.isAreaRedacted(i, { x, y, width, height });
+            for (const item of textItems) {
+                const itemText = item.str.toLowerCase();
 
-                        if (!isRedacted) {
-                            console.log(`Adding global redaction on page ${i} for "${item.str}"`);
-                            Redactor.addRedaction(i, { x, y, width, height }, 'learned');
-                            totalApplied++;
-                        }
+                // Check if the item contains the search text 
+                // OR if it's the search text (exact match often better)
+                if (itemText.includes(cleanSearch)) {
+
+                    // Create bounds
+                    const x = item.transform[4];
+                    const y = item.transform[5];
+                    const width = item.width > 0 ? item.width : (item.str.length * 4); // Better fallback
+                    const height = item.height || 10;
+
+                    // Bounds check
+                    const isRedacted = this.isAreaRedacted(i, { x, y, width, height });
+
+                    if (!isRedacted) {
+                        console.log(`Global match on p${i}: "${item.str}"`);
+                        Redactor.addRedaction(i, { x, y, width, height }, 'learned');
+                        totalApplied++;
                     }
                 }
             }
