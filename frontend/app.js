@@ -204,7 +204,14 @@ const App = {
             this.openDetectionModal(hasKey);
         });
 
-        this.elements.btnExport.addEventListener('click', () => this.exportPDF());
+        this.elements.btnExport.addEventListener('click', async () => {
+            if (this.elements.btnExport.classList.contains('btn-disabled')) {
+                const remaining = this.totalPages - this.validatedPages.size;
+                alert(`Controleer eerst alle pagina's! Nog ${remaining} te gaan.`);
+                return;
+            }
+            this.exportPDF();
+        });
         this.elements.btnClearMetadata.addEventListener('click', () => this.clearMetadata());
         this.elements.btnClearLearning?.addEventListener('click', () => this.clearLearnedData());
 
@@ -490,6 +497,25 @@ const App = {
                 fillEl.style.width = `${percent}%`;
                 fillEl.style.backgroundColor = count === total ? '#10b981' : '#2563eb';
             }
+        }
+
+        this.updateExportButtonState();
+    },
+
+    /**
+     * Update Export Button State
+     */
+    updateExportButtonState() {
+        if (!this.elements.btnExport) return;
+
+        const allValidated = this.validatedPages.size === this.totalPages;
+
+        if (allValidated) {
+            this.elements.btnExport.classList.remove('btn-disabled');
+            this.elements.btnExport.title = "Exporteer veilige PDF";
+        } else {
+            this.elements.btnExport.classList.add('btn-disabled');
+            this.elements.btnExport.title = `Nog ${this.totalPages - this.validatedPages.size} pagina's te controleren`;
         }
     },
 
