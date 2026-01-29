@@ -1461,6 +1461,119 @@ const App = {
             this.elements.detectionProgress.classList.add('hidden');
             this.elements.detectionResults.classList.remove('hidden');
         }
+
+        // Feature: AI Vision Trigger
+        if (typeof MistralService !== 'undefined') {
+            const footer = this.elements.modal.querySelector('.modal-footer');
+            let visionBtn = document.getElementById('btn-vision-scan');
+            if (!visionBtn) {
+                visionBtn = document.createElement('button');
+                visionBtn.id = 'btn-vision-scan';
+                visionBtn.className = 'btn btn-warning'; // Distinct color
+                visionBtn.style.marginRight = 'auto'; // Push to left
+                visionBtn.innerHTML = '👁️ Visuele Scan (Handtekeningen)';
+                visionBtn.title = 'Gebruik AI Vision om krabbels en handtekeningen te vinden (Traag)';
+                visionBtn.addEventListener('click', () => this.runVisualDetection());
+                footer.insertBefore(visionBtn, footer.firstChild);
+            }
+            visionBtn.classList.remove('hidden');
+        }
+    },
+
+    /**
+     * Run Visual Detection (Vision API)
+     */
+    async runVisualDetection() {
+        if (!confirm("Visuele scan duurt langer (een paar seconden per pagina). Wil je doorgaan?")) return;
+
+        this.elements.detectionResults.classList.add('hidden');
+        this.elements.detectionProgress.classList.remove('hidden');
+        const progressText = this.elements.detectionProgress.querySelector('p');
+
+        let totalSignatures = 0;
+
+        for (let i = 1; i <= this.totalPages; i++) {
+            progressText.textContent = `Visuele analyse van pagina ${i}/${this.totalPages}...`;
+
+            try {
+                // Get page canvas
+                const page = await this.pdfDoc.getPage(i);
+                const viewport = page.getViewport({ scale: 1.5 }); // Higher quality for vision
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+                // Create clean image (no existing redactions)
+                const base64 = canvas.toDataURL('image/jpeg', 0.8);
+
+                // Call Vision API
+                const signatures = await MistralService.analyzeImage(base64, i);
+
+                // Process Results
+                if (signatures && signatures.length > 0) {
+                    signatures.forEach(sig => {
+                        // Sig bounds are normalized [ymin, xmin, ymax, xmax] (0-1000)
+                        // Convert to PDF coordinates
+                        // PDF width/height (unscaled)
+                        const pdfPageWidth = this.pageDimensions[i].width;
+                        const pdfPageHeight = this.pageDimensions[i].height;
+
+                        const [ymin, xmin, ymax, xmax] = sig;
+
+                        const width = ((xmax - xmin) / 1000) * pdfPageWidth;
+                        const height = ((ymax - ymin) / 1000) * pdfPageHeight;
+                        const x = (xmin / 1000) * pdfPageWidth;
+
+                        // Y is messy. Vision usually gives top-down. PDF is bottom-up.
+                        // But wait, our API prompt said normalized coordinates. 
+                        // Let's assume Top-Left 0,0 for Vision. 
+                        // PDF 0,0 is Bottom-Left.
+                        // So y (bottom) = PageHeight - (y_top + height)
+                        // y_top_px = (ymin / 1000) * pdfPageHeight
+                        const yTop = (ymin / 1000) * pdfPageHeight;
+                        const yBottom = pdfPageHeight - yTop - height;
+
+                        // Add to detections
+                        if (!this.currentDetections.byCategory['signature']) {
+                            this.currentDetections.byCategory['signature'] = {
+                                name: 'Visuele Handtekeningen',
+                                icon: '✍️',
+                                items: []
+                            };
+                        }
+
+                        this.currentDetections.all.push({
+                            type: 'signature',
+                            value: 'Handtekening (Visueel)',
+                            page: i,
+                            bounds: { x, y: yBottom, width, height },
+                            selected: true
+                        });
+
+                        this.currentDetections.byCategory['signature'].items.push({
+                            type: 'signature',
+                            value: 'Handtekening (Visueel)',
+                            page: i,
+                            bounds: { x, y: yBottom, width, height },
+                            selected: true,
+                            name: 'Visuele Handtekening'
+                        });
+
+                        totalSignatures++;
+                    });
+                }
+
+            } catch (err) {
+                console.error(`Visual scan failed for page ${i}`, err);
+            }
+        }
+
+        // Update UI
+        this.displayDetectionResults(this.currentDetections);
+        this.showToast(`Visuele scan klaar. ${totalSignatures} handtekeningen gevonden.`);
     },
 
     /**

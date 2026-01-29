@@ -42,6 +42,45 @@ const MistralService = {
     // Legacy support for app.js checks
     getApiKey() {
         return "backend-managed";
+    },
+
+    /**
+     * Analyze image using Pixtral Vision (Backend)
+     * @param {string} base64Image - Base64 encoded image
+     * @param {number} pageNum - Page number (for logging)
+     * @returns {Promise<Array>} - Array of signatures [{bounds: [y,x,y,x]}]
+     */
+    async analyzeImage(base64Image, pageNum) {
+        try {
+            // New endpoint for vision
+            // Assuming the base URL is the same domain/server
+            const baseUrl = this.BACKEND_URL.replace('/api/analyze', '');
+            const visionUrl = `${baseUrl}/api/analyze-image`;
+
+            const response = await fetch(visionUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    image: base64Image,
+                    pageNum: pageNum
+                })
+            });
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || `Backend Vision Error: ${response.statusText}`);
+            }
+
+            const signatures = await response.json();
+            return signatures;
+
+        } catch (error) {
+            console.error('Vision Analysis failed:', error);
+            // Non-blocking error for now
+            return [];
+        }
     }
 };
 
