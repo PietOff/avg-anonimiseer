@@ -606,7 +606,8 @@ body::before {
     justify-content: center;
     opacity: 0;
     transition: opacity var(--transition-fast);
-    z-index: 20;
+    z-index: 30; /* Higher than resize handles (21) */
+    pointer-events: auto;
 }
 
 .redaction-box:hover .redaction-delete-btn {
