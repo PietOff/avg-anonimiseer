@@ -2170,6 +2170,24 @@ const App = {
             event.preventDefault();
             this.exportPDF();
         }
+
+        // SHORTCUT: Shift+Enter or Cmd+Enter to toggle validation for CURRENT PAGE
+        if ((event.shiftKey || event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+            event.preventDefault();
+            if (this.currentPage) {
+                const isCurrentlyValidated = this.validatedPages.has(this.currentPage);
+                const newState = !isCurrentlyValidated;
+
+                this.togglePageValidation(this.currentPage, newState);
+
+                // Show brief feedback
+                const status = newState ? 'Goedgekeurd' : 'Niet meer goedgekeurd';
+                this.showToast(`Pagina ${this.currentPage}: ${status}`);
+
+                // Optional: Auto-scroll to next page if approved? 
+                // Let's keep it manual for now to avoid confusion.
+            }
+        }
     }
 };
 
