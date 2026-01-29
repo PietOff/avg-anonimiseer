@@ -578,14 +578,9 @@ const App = {
                                 Detector.learnWord(foundText);
                             }
 
-                            // Global redaction prompt
+                            // Global redaction prompt -> AUTO APPLY
                             if (foundText.length > 2) {
-                                // Use setTimeout to allow the UI to update first (show the box)
-                                setTimeout(() => {
-                                    if (confirm(`Tekst gevonden: "${foundText}"\n\nWil je deze tekst in het hele document overal zwartlakken?`)) {
-                                        this.applyRedactionGlobally(foundText);
-                                    }
-                                }, 100);
+                                this.applyRedactionGlobally(foundText);
                             }
                         }
                     } catch (err) {
@@ -808,6 +803,7 @@ const App = {
                         const isRedacted = this.isAreaRedacted(i, { x, y, width, height });
 
                         if (!isRedacted) {
+                            console.log(`Adding global redaction on page ${i} for "${item.str}"`);
                             Redactor.addRedaction(i, { x, y, width, height }, 'learned');
                             totalApplied++;
                         }
@@ -817,8 +813,9 @@ const App = {
         }
 
         if (totalApplied > 0) {
-            this.showToast(`Nog ${totalApplied} keer "${textToRedact}" zwartgelakt.`);
-            this.renderAllRedactions();
+            this.showToast(`Nog ${totalApplied} keer "${textToRedact}" automatisch zwartgelakt.`);
+            await this.renderAllRedactions();
+            this.updateRedactionsList();
         }
     },
 
@@ -828,8 +825,19 @@ const App = {
     isAreaRedacted(pageNum, bounds) {
         const pageRedactions = Redactor.redactions[pageNum] || [];
         return pageRedactions.some(r => {
+            // Check intersection with existing redactions
+            // Logic fixed: access r.bounds instead of r direct x/y
+            const b = r.bounds;
+            // A tolerant intersection check
+            return (bounds.x < b.x + b.width &&
+                bounds.x + bounds.width > b.x &&
+                bounds.y < b.y + b.height &&
+                bounds.y + bounds.height > b.y);
+
+            /* Old incorrect logic:
             return (bounds.x >= r.x && bounds.x + bounds.width <= r.x + r.width &&
                 bounds.y >= r.y && bounds.y + bounds.height <= r.y + r.height);
+            */
         });
     },
 
