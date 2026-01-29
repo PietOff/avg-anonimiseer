@@ -120,9 +120,9 @@ async def analyze_image(request: AnalyzeImageRequest):
     Analyze the image and locate all handwritten signatures and initials (parafen).
     
     Return a JSON object with a key "signatures".
-    The value should be a list of bounding boxes in the format: [ymin, xmin, ymax, xmax].
+    The value should be a list of bounding boxes in the format: [xmin, ymin, xmax, ymax].
     Coordinates should be normalized (0-1000).
-    Example: {"signatures": [[100, 200, 150, 400], ...]}
+    Example: {"signatures": [[200, 100, 400, 150], ...]}
     
     If no signatures are found, return {"signatures": []}.
     ONLY return JSON.
