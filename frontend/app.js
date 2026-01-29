@@ -635,7 +635,8 @@ const App = {
                 // PDF coords: Y starts at bottom. 
                 // Simple box intersection
                 // Check overlap with tolerance
-                const tolerance = 2; // points
+                // Increased tolerance to 5 to catch small text/footnotes that might be slightly offset
+                const tolerance = 5;
 
                 const xOverlap = (itemX + itemWidth + tolerance >= pdfBounds.x) &&
                     (itemX - tolerance <= pdfBounds.x + pdfBounds.width);
@@ -813,33 +814,78 @@ const App = {
             const textContent = await page.getTextContent();
             const textItems = textContent.items;
 
-            for (const item of textItems) {
-                const itemText = item.str.trim();
+            const itemText = item.str.trim();
+            const itemLower = itemText.toLowerCase();
 
-                // STRICT MODE: Only redact if the item IS the word (or very close)
-                // This ensures we use the EXACT item bounds, so the box is always perfectly placed.
-                // It avoids redacting "sentences" or placing boxes in the middle of nowhere.
+            // 1. STRICT SINGLE ITEM MATCH
+            // (Best for single words like "0612345678" or simple names)
+            const exactMatch = itemLower === cleanSearch;
+            // Allow slightly longer item (e.g. "Visser," match "Visser") but STRICT containment
+            const includesApprox = itemText.length < cleanSearch.length + 5 && itemLower.includes(cleanSearch);
 
-                const exactMatch = itemText.toLowerCase() === cleanSearch;
-                const includesApprox = itemText.length < cleanSearch.length + 5 && itemText.toLowerCase().includes(cleanSearch);
+            if (exactMatch || includesApprox) {
+                const x = item.transform[4];
+                const y = item.transform[5];
+                const width = item.width > 0 ? item.width : (item.str.length * 4);
+                const height = item.height || 10;
 
-                if (exactMatch || includesApprox) {
-                    // Create bounds from the item itself (Guaranteed correct position)
-                    const x = item.transform[4];
-                    const y = item.transform[5];
-                    const width = item.width > 0 ? item.width : (item.str.length * 4);
-                    const height = item.height || 10;
+                if (!this.isAreaRedacted(i, { x, y, width, height })) {
+                    console.log(`Global match (single) on p${i}: "${itemText}"`);
+                    Redactor.addRedaction(i, { x, y, width, height }, 'learned', cleanSearch);
+                    totalApplied++;
+                }
+            }
 
-                    // Bounds check
-                    const isRedacted = this.isAreaRedacted(i, { x, y, width, height });
+            // 2. MULTI-ITEM SEQUENCE MATCH (For "M. Visser" split across items)
+            // Only if search term has spaces (is a phrase)
+            else if (cleanSearch.includes(' ')) {
+                // Peek ahead 1-2 items
+                // We assume the name won't be split across more than 3 text chunks normally
+                let combined = itemText;
+                const itemsInSequence = [item];
 
-                    if (!isRedacted) {
-                        console.log(`Global match on p${i}: "${itemText}"`);
-                        Redactor.addRedaction(i, { x, y, width, height }, 'learned');
-                        totalApplied++;
+                for (let j = 1; j <= 3; j++) {
+                    const nextItem = textItems[itemIndex + j];
+                    if (!nextItem) break;
+
+                    combined += ' ' + nextItem.str.trim();
+                    itemsInSequence.push(nextItem);
+
+                    // Check if THIS combination is the name
+                    if (combined.toLowerCase() === cleanSearch ||
+                        (combined.length < cleanSearch.length + 4 && combined.toLowerCase().includes(cleanSearch))) {
+
+                        // FOUND IT! Calculate union bounds
+                        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+                        itemsInSequence.forEach(seqItem => {
+                            const bx = seqItem.transform[4];
+                            const by = seqItem.transform[5];
+                            // Height is tricky in PDF coords (bottom-up), let's assume standard
+                            const bh = seqItem.height || 10;
+                            const bw = seqItem.width > 0 ? seqItem.width : (seqItem.str.length * 4);
+
+                            minX = Math.min(minX, bx);
+                            minY = Math.min(minY, by);
+                            maxX = Math.max(maxX, bx + bw);
+                            maxY = Math.max(maxY, by + bh);
+                        });
+
+                        const unionBounds = {
+                            x: minX,
+                            y: minY,
+                            width: maxX - minX,
+                            height: maxY - minY
+                        };
+
+                        if (!this.isAreaRedacted(i, unionBounds)) {
+                            console.log(`Global match (sequence) on p${i}: "${combined}"`);
+                            Redactor.addRedaction(i, unionBounds, 'learned', cleanSearch);
+                            totalApplied++;
+                        }
+                        break; // Stop looking ahead for this start item
                     }
                 }
-                // Skip complex substring logic for now to ensure stability
             }
         }
 
