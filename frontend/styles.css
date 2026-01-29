@@ -543,8 +543,9 @@ body::before {
 
 .pdf-viewer {
     flex: 1;
-    overflow: auto;
     display: flex;
+    justify-content: flex-start; /* Was center, causing clipping on left */
+    overflow: auto;
     align-items: flex-start;
     justify-content: center;
     padding: var(--spacing-lg);
