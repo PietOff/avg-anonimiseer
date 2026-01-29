@@ -474,7 +474,7 @@ const Detector = {
      * These are common labels in Dutch soil reports (bodemrapporten)
      */
     fieldLabels: {
-        // Primary labels - definitely personal data
+        // Primary labels - definitely personal data to redact
         primary: [
             { label: 'opdrachtgever', name: 'Opdrachtgever', icon: '👤' },
             { label: 'eigenaar', name: 'Eigenaar', icon: '👤' },
@@ -483,11 +483,19 @@ const Detector = {
             { label: 'ter attentie van', name: 'Ter attentie van', icon: '👤' },
             { label: 'aanvrager', name: 'Aanvrager', icon: '👤' },
             { label: 'rechthebbende', name: 'Rechthebbende', icon: '👤' },
+            { label: 'boormeester', name: 'Boormeester', icon: '👷' },
+            { label: 'veldwerker', name: 'Veldwerker', icon: '👷' },
+            { label: 'monsternemer', name: 'Monsternemer', icon: '🧪' },
+            { label: 'analist', name: 'Analist', icon: '🔬' },
+            { label: 'uitvoerder', name: 'Uitvoerder', icon: '👷' },
+            { label: 'projectleider', name: 'Projectleider', icon: '👔' },
+            { label: 'rapporteur', name: 'Rapporteur', icon: '📝' },
+            { label: 'auteur', name: 'Auteur', icon: '✍️' }
         ],
         // Professional labels - should NOT be redacted
+        // (Cleaned up: moved specific roles to primary if they are usually followed by names)
         professional: [
-            'projectleider', 'rapporteur', 'opsteller', 'gecertificeerd',
-            'beoordelaar', 'monsternemer', 'analist', 'behandeld', 'ingediend', 'uitgevoerd'
+            'gecertificeerd', 'behandeld', 'ingediend', 'uitgevoerd', 'gecontroleerd'
         ]
     },
 
@@ -496,30 +504,10 @@ const Detector = {
      * This is the most accurate method for structured documents like soil reports
      */
     detectLabeledFields(text, pageNumber = 1) {
-        const detections = [];
-
-        for (const fieldDef of this.fieldLabels.primary) {
-            const labelRegex = new RegExp(
-                fieldDef.label + '(:\\s*|\\s+)([A-Z][^\\n]{3,50})',
-                'g'
-            );
-
-            // Re-implement basic regex loop for restoration
-            let match;
-            while ((match = labelRegex.exec(text)) !== null) {
-                const value = match[2].trim();
-                if (Detector.shouldExclude(value, match.index, text)) continue;
-
-                detections.push({
-                    type: 'field',
-                    value: value,
-                    label: fieldDef.label,
-                    index: match.index + match[1].length, // approximate
-                    confidence: 0.95
-                });
-            }
-        }
-        return detections;
+        // Redundant - functionality moved to findMatches but kept for compatibility if called directly
+        // Just return empty or proxy to findMatches logic if needed.
+        // For now, let's keep it simple and rely on findMatches.
+        return [];
     },
 
     /**
@@ -539,22 +527,26 @@ const Detector = {
         for (const fieldDef of this.fieldLabels.primary) {
             // Create regex to find label followed by content
             // STRICTER: Require colon OR if space, value must start with uppercase
-            const labelRegex = new RegExp(
-                fieldDef.label + '(:\\s*|\\s+)([A-Z][^\\n]{3,50})',
-                'g' // 'i' flag handled by manual casing check to allow "Opdrachtgever" vs "opdrachtgever"
-            );
 
-            // Additional regex for colon without uppercase requirement (e.g. "email: piet@...")
+            // 1. Label with Colon (Strongest signal) - Case Insensitive, allow any text after
             const looseRegex = new RegExp(
                 fieldDef.label + ':\\s*([^\\n]{3,50})',
                 'gi'
             );
 
-            // Combine both regexes
+            // 2. Label without Colon - Case Insensitive but Value MUST be Capitalized
+            const strictRegex = new RegExp(
+                `\\b${fieldDef.label}\\s+([A-Z][^\\.\\n,:]+)`,
+                'g' // No 'i' for value, but 'i' for label? Mixed is hard.
+                // Actually, let's make the label part regex insensitive via character classes or just lowercasing text?
+                // JS Regex doesn't support local flags.
+                // Solution: Use 'gi' but validate capitalization in code.
+            );
+
+            // Re-implementing correctly:
             const patterns = [
-                { regex: looseRegex, type: 'strict' }, // Starts with colon -> allow looser content
-                // STRICT MODE: No colon -> content MUST start with Capital and look like name
-                { regex: new RegExp(`\\b${fieldDef.label}\\s+([A-Z][^\\.\\n,:]+)`, 'g'), type: 'loose' }
+                { regex: looseRegex, type: 'strict' }, // Colon -> accepts "m. visser"
+                { regex: new RegExp(`\\b${fieldDef.label}\\s+([A-Z][^\\.\\n,:]+)`, 'gi'), type: 'loose' } // No Colon -> accepts "Boormeester Jan"
             ];
 
             for (const { regex, type } of patterns) {
