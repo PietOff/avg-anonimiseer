@@ -95,7 +95,16 @@ const Detector = {
 
                 // CONTEXT CHECK:
                 // If it starts with 06 (mobile), it's high confidence.
-                if (clean.replaceAll(/[\s.-]/g, '').startsWith('06')) return true;
+                if (clean.replaceAll(/[\s.-]/g, '').startsWith('06')) {
+                    // Context Check: Barcodes often start with 06 in the lab world
+                    if (matchIndex > 0 && fullText) {
+                        const preContext = fullText.substring(Math.max(0, matchIndex - 50), matchIndex).toLowerCase();
+                        if (preContext.includes('barcode') || preContext.includes('monster') || preContext.includes('analyse')) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
 
                 // If it's a landline (010, 020 etc), it could be a random number.
                 // Check if context boosters ("tel", "fax") are present.
@@ -163,6 +172,38 @@ const Detector = {
                 const nextChars = fullText.substr(matchIndex + match.length, 20);
                 if (/_{3,}/.test(nextChars)) return true; // Followed by lines
                 return true;
+            }
+        },
+
+        // Names with Initials (e.g. J. Jansen, A.B. de Vries)
+        nameInitials: {
+            name: 'Naam (Initialen)',
+            icon: '👤',
+            // Match: Capital Letter + dot + space(optional) + Surname (Capitalized)
+            // Handles multiple initials: "A.B.C. Jansen"
+            regex: /\b(?:[A-Z]\.\s*)+[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\s+(?:van|de|der|den|het|ten|ter|te)\s+[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+)?\b/g,
+            validate: (match, matchIndex, fullText) => {
+                // Exclude common abbreviations that look like names
+                const exclude = ['B.V.', 'N.V.', 'Z.K.H.', 'H.M.', 'A.U.B.', 'N.B.', 'T.A.V.'];
+                if (exclude.includes(match.trim().toUpperCase())) return false;
+
+                return !Detector.shouldExclude(match, matchIndex, fullText);
+            }
+        },
+
+        // Names with Initials (e.g. J. Jansen, A.B. de Vries)
+        nameInitials: {
+            name: 'Naam (Initialen)',
+            icon: '👤',
+            // Match: Capital Letter + dot + space(optional) + Surname (Capitalized)
+            // Handles multiple initials: "A.B.C. Jansen"
+            regex: /\b(?:[A-Z]\.\s*)+[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\s+(?:van|de|der|den|het|ten|ter|te)\s+[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+)?\b/g,
+            validate: (match, matchIndex, fullText) => {
+                // Exclude common abbreviations that look like names
+                const exclude = ['B.V.', 'N.V.', 'Z.K.H.', 'H.M.', 'A.U.B.', 'N.B.'];
+                if (exclude.includes(match.trim().toUpperCase())) return false;
+
+                return !Detector.shouldExclude(match, matchIndex, fullText);
             }
         }
     },

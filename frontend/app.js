@@ -582,11 +582,17 @@ const App = {
                 // Check overlap
                 // PDF coords: Y starts at bottom. 
                 // Simple box intersection
-                if (itemX + itemWidth >= pdfBounds.x &&
-                    itemX <= pdfBounds.x + pdfBounds.width &&
-                    itemY + itemHeight >= pdfBounds.y &&
-                    itemY <= pdfBounds.y + pdfBounds.height) {
+                // Check overlap with tolerance
+                const tolerance = 2; // points
 
+                const xOverlap = (itemX + itemWidth + tolerance >= pdfBounds.x) && 
+                               (itemX - tolerance <= pdfBounds.x + pdfBounds.width);
+                
+                const yOverlap = (itemY + itemHeight + tolerance >= pdfBounds.y) && 
+                               (itemY - tolerance <= pdfBounds.y + pdfBounds.height);
+
+                if (xOverlap && yOverlap) {
+                    // console.log(`Found intersection: "${item.str}" at [${itemX}, ${itemY}]`);
                     matchedText.push(item.str.trim());
                 }
             }
