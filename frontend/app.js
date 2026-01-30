@@ -856,58 +856,85 @@ const App = {
         const cleanSearch = textToRedact.trim().toLowerCase();
         if (cleanSearch.length < 2) return;
 
-        console.log(`Applying global redaction for: "${cleanSearch}"`);
+        // Normalize for comparison: remove spaces
+        const normalizedSearch = cleanSearch.replace(/\s+/g, '');
+
+        console.log(`Applying global redaction for: "${cleanSearch}" (normalized: "${normalizedSearch}")`);
         let totalApplied = 0;
 
-        // Create regex for word boundary matching
-        const safeSearch = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`\\b${safeSearch}\\b`, 'i');
-
-        for (let i = 1; i <= this.pdfDoc.numPages; i++) {
-            const page = await this.pdfDoc.getPage(i);
+        for (let pageNum = 1; pageNum <= this.pdfDoc.numPages; pageNum++) {
+            const page = await this.pdfDoc.getPage(pageNum);
             const textContent = await page.getTextContent();
             const textItems = textContent.items;
 
-            for (let j = 1; j <= 3; j++) {
-                const nextItem = textItems[itemIndex + j];
-                if (!nextItem) break;
+            // Iterate through each text item as a potential starting point
+            for (let itemIndex = 0; itemIndex < textItems.length; itemIndex++) {
+                const startItem = textItems[itemIndex];
+                if (!startItem || !startItem.str) continue;
 
-                combined += ' ' + nextItem.str.trim();
-                itemsInSequence.push(nextItem);
+                // Build a combined string from this item + up to 4 more (lookahead of 5 total)
+                let combined = startItem.str;
+                let normalizedCombined = combined.toLowerCase().replace(/\s+/g, '');
+                const itemsInSequence = [startItem];
 
-                // Check if THIS combination is the name
-                if (combined.toLowerCase() === cleanSearch ||
-                    (combined.length < cleanSearch.length + 4 && combined.toLowerCase().includes(cleanSearch))) {
-
-                    // FOUND IT! Calculate union bounds
-                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-                    itemsInSequence.forEach(seqItem => {
-                        const bx = seqItem.transform[4];
-                        const by = seqItem.transform[5];
-                        // Height is tricky in PDF coords (bottom-up), let's assume standard
-                        const bh = seqItem.height || 10;
-                        const bw = seqItem.width > 0 ? seqItem.width : (seqItem.str.length * 4);
-
-                        minX = Math.min(minX, bx);
-                        minY = Math.min(minY, by);
-                        maxX = Math.max(maxX, bx + bw);
-                        maxY = Math.max(maxY, by + bh);
-                    });
-
-                    const unionBounds = {
-                        x: minX,
-                        y: minY,
-                        width: maxX - minX,
-                        height: maxY - minY
+                // Check single item first
+                if (normalizedCombined.includes(normalizedSearch)) {
+                    // Single item match!
+                    const bounds = {
+                        x: startItem.transform[4],
+                        y: startItem.transform[5],
+                        width: startItem.width > 0 ? startItem.width : (startItem.str.length * 5),
+                        height: startItem.height || 12
                     };
 
-                    if (!this.isAreaRedacted(i, unionBounds)) {
-                        console.log(`Global match (sequence) on p${i}: "${combined}"`);
-                        Redactor.addRedaction(i, unionBounds, 'learned', cleanSearch);
+                    if (!this.isAreaRedacted(pageNum, bounds)) {
+                        console.log(`Global match (single) on p${pageNum}: "${startItem.str}"`);
+                        Redactor.addRedaction(pageNum, bounds, 'learned', cleanSearch);
                         totalApplied++;
                     }
-                    break; // Stop looking ahead for this start item
+                    continue; // Move to next item
+                }
+
+                // Not found in single item, look ahead up to 4 more items
+                for (let ahead = 1; ahead <= 4; ahead++) {
+                    const nextItem = textItems[itemIndex + ahead];
+                    if (!nextItem || !nextItem.str) break;
+
+                    combined += ' ' + nextItem.str;
+                    normalizedCombined = combined.toLowerCase().replace(/\s+/g, '');
+                    itemsInSequence.push(nextItem);
+
+                    // Check if the combined text contains the search term
+                    if (normalizedCombined.includes(normalizedSearch)) {
+                        // Calculate union bounds of all items in sequence
+                        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+                        itemsInSequence.forEach(seqItem => {
+                            const bx = seqItem.transform[4];
+                            const by = seqItem.transform[5];
+                            const bh = seqItem.height || 12;
+                            const bw = seqItem.width > 0 ? seqItem.width : (seqItem.str.length * 5);
+
+                            minX = Math.min(minX, bx);
+                            minY = Math.min(minY, by);
+                            maxX = Math.max(maxX, bx + bw);
+                            maxY = Math.max(maxY, by + bh);
+                        });
+
+                        const unionBounds = {
+                            x: minX,
+                            y: minY,
+                            width: maxX - minX,
+                            height: maxY - minY
+                        };
+
+                        if (!this.isAreaRedacted(pageNum, unionBounds)) {
+                            console.log(`Global match (sequence) on p${pageNum}: "${combined}"`);
+                            Redactor.addRedaction(pageNum, unionBounds, 'learned', cleanSearch);
+                            totalApplied++;
+                        }
+                        break; // Found it, stop looking ahead
+                    }
                 }
             }
         }
