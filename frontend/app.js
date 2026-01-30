@@ -1335,63 +1335,6 @@ const App = {
         }
     },
 
-    /**
-     * Render the list of pages in the sidebar
-     */
-    renderPageList() {
-        // Create section if it doesn't exist
-        let sidebarSection = document.querySelector('.page-list-section');
-        if (!sidebarSection) {
-            sidebarSection = document.createElement('div');
-            sidebarSection.className = 'sidebar-section page-list-section';
-            sidebarSection.innerHTML = '<h3>Pagina\'s</h3>';
-
-            // Find correct place to insert (before Redactions)
-            const sidebar = this.elements.detectionsList.closest('.sidebar');
-            const redactionsSection = this.elements.redactionsList.closest('.sidebar-section');
-            if (sidebar && redactionsSection) {
-                sidebar.insertBefore(sidebarSection, redactionsSection);
-            }
-        }
-
-        // Clear list
-        let list = sidebarSection.querySelector('.detections-list');
-        if (!list) {
-            list = document.createElement('div');
-            list.className = 'detections-list'; // Reuse styling
-            list.style.maxHeight = '300px';
-            sidebarSection.appendChild(list);
-        } else {
-            list.innerHTML = '';
-        }
-
-        for (let i = 1; i <= this.totalPages; i++) {
-            const item = document.createElement('div');
-            item.className = 'detection-item'; // Reuse styling
-            item.style.justifyContent = 'flex-start';
-            item.style.gap = '10px';
-
-            const isValidated = this.validatedPages.has(i);
-            const statusIcon = isValidated ? '✅' : '📄';
-
-            item.innerHTML = `
-                <span style="font-size: 1.2em">${statusIcon}</span>
-                <span>Pagina ${i}</span>
-            `;
-
-            // Highlight current page
-            if (i === this.currentPage) {
-                item.style.background = 'var(--bg-glass-hover)';
-                item.style.borderLeft = '3px solid var(--accent-primary)';
-            }
-
-            item.addEventListener('click', () => {
-                this.goToPage(i);
-            });
-
-            list.appendChild(item);
-        }
-    },
 
     /**
      * Zoom in/out

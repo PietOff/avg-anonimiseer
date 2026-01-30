@@ -189,24 +189,9 @@ const Detector = {
 
                 return !Detector.shouldExclude(match, matchIndex, fullText);
             }
-        },
-
-        // Names with Initials (e.g. J. Jansen, A.B. de Vries)
-        nameInitials: {
-            name: 'Naam (Initialen)',
-            icon: '👤',
-            // Match: Capital Letter + dot + space(optional) + Surname (Capitalized)
-            // Handles multiple initials: "A.B.C. Jansen"
-            regex: /\b(?:[A-Z]\.\s*)+[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\s+(?:van|de|der|den|het|ten|ter|te)\s+[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+)?\b/g,
-            validate: (match, matchIndex, fullText) => {
-                // Exclude common abbreviations that look like names
-                const exclude = ['B.V.', 'N.V.', 'Z.K.H.', 'H.M.', 'A.U.B.', 'N.B.'];
-                if (exclude.includes(match.trim().toUpperCase())) return false;
-
-                return !Detector.shouldExclude(match, matchIndex, fullText);
-            }
         }
     },
+
 
     // Name patterns (harder to detect reliably)
     namePatterns: {
