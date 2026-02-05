@@ -568,8 +568,8 @@ body::before {
 
 .redaction-box {
     position: absolute;
-    background: #000000 !important;
-    opacity: 1 !important;
+    background: #000000;
+    opacity: 1;
     pointer-events: auto;
     cursor: pointer;
     transition: box-shadow var(--transition-fast);

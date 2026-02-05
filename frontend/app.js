@@ -615,8 +615,22 @@ const App = {
                             }
 
                             // Global redaction prompt -> AUTO APPLY
-                            if (foundText.length > 2) {
+                            // Global redaction prompt -> AUTO APPLY logic
+                            // Heuristic: 
+                            // > 4 chars: Safe to assume it's a word/name -> Auto apply
+                            // 2-4 chars: Ambiguous (could be "van" or signature noise) -> Ask
+                            // < 2 chars: Ignored (local only)
+
+                            if (foundText.length > 4) {
+                                this.showToast(`Automatisch "${foundText}" overal gelakt.`);
                                 this.applyRedactionGlobally(foundText);
+                            } else if (foundText.length >= 2) {
+                                // Small delay to let the UI update first
+                                setTimeout(() => {
+                                    if (confirm(`Tekst herkend: "${foundText}"\n\nWil je dit woord OVERAL in het document zwart lakken?`)) {
+                                        this.applyRedactionGlobally(foundText);
+                                    }
+                                }, 50);
                             }
                         }
                     } catch (err) {
@@ -818,7 +832,10 @@ const App = {
                         const allRedactions = Redactor.getAllRedactions();
                         const instances = allRedactions.filter(r => r.value === redaction.value && redaction.value);
 
-                        if (instances.length > 1) {
+                        // FIX: For manual redactions, default to single delete to avoid accidents
+                        // Only prompt for global delete if it's a learned/detected pattern OR if user explicitly asks (future feat)
+
+                        if (redaction.type !== 'manual' && instances.length > 1) {
                             const confirmGlobal = confirm(`Dit woord komt ${instances.length} keer voor. Wil je deze OVERAL verwijderen?\n\nOK = Overal\nAnnuleren = Alleen dit exemplaar`);
                             if (confirmGlobal) {
                                 if (typeof Detector !== 'undefined' && Detector.ignoreWord) {
@@ -829,7 +846,7 @@ const App = {
                                 Redactor.removeRedaction(redaction.id);
                             }
                         } else {
-                            // Single instance or manual with no value
+                            // Manual redaction OR single instance -> Always single delete
                             Redactor.removeRedaction(redaction.id);
                         }
                     } catch (err) {
