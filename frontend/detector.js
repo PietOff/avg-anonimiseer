@@ -333,6 +333,9 @@ const Detector = {
         // Document Structure (Common Header false positives)
         'hoofdstuk', 'paragraaf', 'onderdeel', 'sectie', 'bijlage', 'pagina', 'blad', 'tabel', 'figuur', 'grafiek', 'tekst', 'betrouwbaarheid', 'inleiding', 'samenvatting',
 
+        // Map / Drawing Terms
+        'schaal', 'situatie', 'tekening', 'kadastraal', 'perceel', 'legenda', 'noord', 'datum', 'project', 'formaat', 'getekend', 'gezien', 'status', 'wijziging', 'blad',
+
         // Locations / Prepositions / Noise
         'oud', 'nieuw', 'groot', 'klein', 'noord', 'oost', 'zuid', 'west',
         'boven', 'onder', 'midden', 'centraal', 'gastel', 'leur', 'plaisir',
