@@ -795,50 +795,53 @@ const App = {
                             this.updateRedactionsList();
                         }
                     });
-                } else {
-                    // Standard Redaction (Black/Gray)
-                    // Only standard boxes get the delete button (indicators are just hints)
+                }
 
-                    // Delete button
-                    const deleteBtn = document.createElement('button');
-                    deleteBtn.className = 'redaction-delete-btn';
-                    deleteBtn.innerHTML = '✕';
-                    deleteBtn.title = 'Verwijder redactie';
-                    // Use mousedown to prevent drag-start from interfering
-                    deleteBtn.addEventListener('mousedown', async (e) => {
-                        e.stopPropagation(); // Crucial
-                        e.preventDefault();  // Prevent focus theft
-                        console.log('Delete button clicked for:', redaction);
+                // Delete button - Now for BOTH standard and indicators
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'redaction-delete-btn';
+                deleteBtn.innerHTML = '✕';
+                deleteBtn.title = 'Verwijder redactie';
+                // Adjust color for indicators if needed
+                if (redaction.type === 'indicator') {
+                    deleteBtn.style.background = 'rgba(0,0,0,0.1)';
+                    deleteBtn.style.color = '#333';
+                }
 
-                        try {
-                            const allRedactions = Redactor.getAllRedactions();
-                            const instances = allRedactions.filter(r => r.value === redaction.value && redaction.value);
+                // Use mousedown to prevent drag-start from interfering
+                deleteBtn.addEventListener('mousedown', async (e) => {
+                    e.stopPropagation(); // Crucial
+                    e.preventDefault();  // Prevent focus theft
+                    console.log('Delete button clicked for:', redaction);
 
-                            if (instances.length > 1) {
-                                const confirmGlobal = confirm(`Dit woord komt ${instances.length} keer voor. Wil je deze OVERAL verwijderen?\n\nOK = Overal\nAnnuleren = Alleen dit exemplaar`);
-                                if (confirmGlobal) {
-                                    if (typeof Detector !== 'undefined' && Detector.ignoreWord) {
-                                        Detector.ignoreWord(redaction.value);
-                                    }
-                                    this.removeRedactionGlobally(redaction.value);
-                                } else {
-                                    Redactor.removeRedaction(redaction.id);
+                    try {
+                        const allRedactions = Redactor.getAllRedactions();
+                        const instances = allRedactions.filter(r => r.value === redaction.value && redaction.value);
+
+                        if (instances.length > 1) {
+                            const confirmGlobal = confirm(`Dit woord komt ${instances.length} keer voor. Wil je deze OVERAL verwijderen?\n\nOK = Overal\nAnnuleren = Alleen dit exemplaar`);
+                            if (confirmGlobal) {
+                                if (typeof Detector !== 'undefined' && Detector.ignoreWord) {
+                                    Detector.ignoreWord(redaction.value);
                                 }
+                                this.removeRedactionGlobally(redaction.value);
                             } else {
-                                // Single instance or manual with no value
                                 Redactor.removeRedaction(redaction.id);
                             }
-                        } catch (err) {
-                            console.error('Delete failed:', err);
-                            alert('Fout bij verwijderen: ' + err.message);
+                        } else {
+                            // Single instance or manual with no value
+                            Redactor.removeRedaction(redaction.id);
                         }
+                    } catch (err) {
+                        console.error('Delete failed:', err);
+                        alert('Fout bij verwijderen: ' + err.message);
+                    }
 
-                        // Force re-render
-                        await this.renderAllRedactions();
-                        this.updateRedactionsList();
-                    });
-                    box.appendChild(deleteBtn);
-                } // END ELSE (Standard Redaction specific stuff like delete button)
+                    // Force re-render
+                    await this.renderAllRedactions();
+                    this.updateRedactionsList();
+                });
+                box.appendChild(deleteBtn);
 
                 // SHARED INTERACTION (Move & Resize) - Applies to ALL types including indicators
 
