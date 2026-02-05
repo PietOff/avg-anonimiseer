@@ -327,8 +327,11 @@ const Detector = {
         'development', 'solutions', 'systems', 'services', 'partners',
         'management', 'agency', 'associates', 'lab', 'laboratory', 'laboratories',
         'analytics', 'analytico', 'eurofins', 'sgs', 'alcontrol', 'synlab',
-        'wematech', 'dijkstra', 'tritium', 'environmental', 'oem', 'ozeef',
-        'soo', 'int', 'ef', 'ie', 'ed', 'al', 'cao', 'ki', 'stek', 'my',
+        'wematech', 'dijkstra', 'tritium',    // Acronyms (Soil/Construction)
+        'agw', 'hbb', 'ubi', 'ldb2004', 'lib', 'bkl', 'nen', 'bro', 'bal', 'wbb', 'mer',
+
+        // Document Structure (Common Header false positives)
+        'hoofdstuk', 'paragraaf', 'onderdeel', 'sectie', 'bijlage', 'pagina', 'blad', 'tabel', 'figuur', 'grafiek', 'tekst', 'betrouwbaarheid', 'inleiding', 'samenvatting',
 
         // Locations / Prepositions / Noise
         'oud', 'nieuw', 'groot', 'klein', 'noord', 'oost', 'zuid', 'west',
@@ -413,6 +416,14 @@ const Detector = {
                 for (const cw of contextWords) {
                     if (precedingWord === cw || precedingWord.endsWith(cw)) return true;
                 }
+            }
+
+            // Check for numeric prefix (Section headers like '7.3 Name')
+            // Look at 10 chars before match
+            const immediatePrefix = fullText.substring(Math.max(0, matchIndex - 10), matchIndex).trim();
+            // Matches "7.3", "1.", "2.4.1", etc. appearing right before the name
+            if (/^\d+(\.\d+)*\.?$/.test(immediatePrefix)) {
+                return true;
             }
 
             // Company suffixes
