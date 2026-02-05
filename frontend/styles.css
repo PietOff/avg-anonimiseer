@@ -183,6 +183,7 @@ body::before {
     background: var(--bg-glass);
     color: var(--text-primary);
     border-color: var(--border-color);
+    -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
 }
 
@@ -255,6 +256,7 @@ body::before {
     border: 2px dashed var(--border-color);
     border-radius: var(--radius-xl);
     background: var(--bg-glass);
+    -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
     transition: all var(--transition-normal);
     cursor: pointer;
@@ -544,7 +546,8 @@ body::before {
 .pdf-viewer {
     flex: 1;
     display: flex;
-    justify-content: flex-start; /* Was center, causing clipping on left */
+    justify-content: flex-start;
+    /* Was center, causing clipping on left */
     overflow: auto;
     align-items: flex-start;
     justify-content: center;
@@ -606,7 +609,8 @@ body::before {
     justify-content: center;
     opacity: 0;
     transition: opacity var(--transition-fast);
-    z-index: 30; /* Higher than resize handles (21) */
+    z-index: 30;
+    /* Higher than resize handles (21) */
     pointer-events: auto;
 }
 

@@ -213,6 +213,35 @@ const App = {
             }
             this.exportPDF();
         });
+
+        // Toggle Mark All
+        const btnValidateAll = document.getElementById('btn-validate-all');
+        if (btnValidateAll) {
+            btnValidateAll.addEventListener('click', () => this.markAllPagesValidated());
+        }
+
+        // Undo / Redo
+        const btnUndo = document.getElementById('btn-undo');
+        const btnRedo = document.getElementById('btn-redo');
+        if (btnUndo) {
+            btnUndo.addEventListener('click', () => {
+                if (Redactor.undo()) {
+                    this.renderAllRedactions();
+                    this.updateRedactionsList();
+                    this.updateDetectionsList();
+                }
+            });
+        }
+        if (btnRedo) {
+            btnRedo.addEventListener('click', () => {
+                if (Redactor.redo()) {
+                    this.renderAllRedactions();
+                    this.updateRedactionsList();
+                    this.updateDetectionsList();
+                }
+            });
+        }
+
         this.elements.btnClearMetadata.addEventListener('click', () => this.clearMetadata());
         this.elements.btnClearLearning?.addEventListener('click', () => this.clearLearnedData());
 
@@ -440,6 +469,37 @@ const App = {
 
         // Render any existing redactions
         this.renderAllRedactions();
+        this.updateUndoRedoUI();
+    },
+
+    /**
+     * Mark ALL pages as validated
+     */
+    markAllPagesValidated() {
+        if (!confirm('Weet u zeker dat u alle pagina\'s in één keer wilt goedkeuren?')) return;
+
+        for (let i = 1; i <= this.totalPages; i++) {
+            this.validatedPages.add(i);
+        }
+
+        // Force UI update for all pages
+        // Optimization: Instead of re-rendering everything, we just update classes if DOM exists
+        for (let i = 1; i <= this.totalPages; i++) {
+            const wrapper = document.getElementById(`page-wrapper-${i}`);
+            if (wrapper) {
+                // Update visual state directly
+                const label = wrapper.querySelector('.validation-status-text');
+                const canvasWrapper = wrapper.querySelector('.canvas-wrapper');
+                const checkbox = wrapper.querySelector('.validation-checkbox');
+
+                if (label) label.textContent = '✅ Gecontroleerd';
+                if (canvasWrapper) canvasWrapper.classList.add('page-validated');
+                if (checkbox) checkbox.checked = true;
+            }
+        }
+
+        this.updateValidationProgress();
+        this.showToast('✅ Alle pagina\'s zijn goedgekeurd!');
     },
 
     /**
@@ -904,6 +964,24 @@ const App = {
 
                 redactionLayer.appendChild(box);
             }
+        }
+        this.updateUndoRedoUI();
+    },
+
+    /**
+     * Update Undo/Redo button states
+     */
+    updateUndoRedoUI() {
+        const btnUndo = document.getElementById('btn-undo');
+        const btnRedo = document.getElementById('btn-redo');
+
+        if (btnUndo) {
+            btnUndo.disabled = !Redactor.canUndo();
+            btnUndo.style.opacity = btnUndo.disabled ? '0.5' : '1';
+        }
+        if (btnRedo) {
+            btnRedo.disabled = !Redactor.canRedo();
+            btnRedo.style.opacity = btnRedo.disabled ? '0.5' : '1';
         }
     },
 
@@ -2424,9 +2502,23 @@ const App = {
             this.closeModal();
         }
 
-        if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'z') {
             event.preventDefault();
-            this.exportPDF();
+            if (event.shiftKey) {
+                // Redo
+                if (Redactor.redo()) {
+                    this.renderAllRedactions();
+                    this.updateRedactionsList();
+                    this.updateDetectionsList();
+                }
+            } else {
+                // Undo
+                if (Redactor.undo()) {
+                    this.renderAllRedactions();
+                    this.updateRedactionsList();
+                    this.updateDetectionsList();
+                }
+            }
         }
 
         // SHORTCUT: Shift+Enter or Cmd+Enter to toggle validation for CURRENT PAGE
