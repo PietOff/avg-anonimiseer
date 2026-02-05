@@ -160,6 +160,9 @@ const Redactor = {
                 const page = pages[pageIndex];
 
                 for (const redaction of redactions) {
+                    // Skip 'indicator' type - these are visual hints only!
+                    if (redaction.type === 'indicator') continue;
+
                     const { bounds } = redaction;
 
                     // Draw a black rectangle over the content
