@@ -811,18 +811,21 @@ const App = {
                         console.log('Delete button clicked for:', redaction);
 
                         try {
-                            // FEATURE: Global Deletion
-                            if (redaction.value && redaction.type !== 'manual') {
-                                if (typeof Detector !== 'undefined' && Detector.ignoreWord) {
-                                    Detector.ignoreWord(redaction.value);
+                            const allRedactions = Redactor.getAllRedactions();
+                            const instances = allRedactions.filter(r => r.value === redaction.value && redaction.value);
+
+                            if (instances.length > 1) {
+                                const confirmGlobal = confirm(`Dit woord komt ${instances.length} keer voor. Wil je deze OVERAL verwijderen?\n\nOK = Overal\nAnnuleren = Alleen dit exemplaar`);
+                                if (confirmGlobal) {
+                                    if (typeof Detector !== 'undefined' && Detector.ignoreWord) {
+                                        Detector.ignoreWord(redaction.value);
+                                    }
+                                    this.removeRedactionGlobally(redaction.value);
+                                } else {
+                                    Redactor.removeRedaction(redaction.id);
                                 }
-                                console.log('Removing globally:', redaction.value);
-                                this.removeRedactionGlobally(redaction.value);
-                            } else if (redaction.value) {
-                                console.log('Removing manual w/ value globally:', redaction.value);
-                                this.removeRedactionGlobally(redaction.value);
                             } else {
-                                console.log('Removing single redaction:', redaction.id);
+                                // Single instance or manual with no value
                                 Redactor.removeRedaction(redaction.id);
                             }
                         } catch (err) {
@@ -1555,11 +1558,21 @@ const App = {
             const deleteBtn = item.querySelector('.btn-delete-redaction');
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (r.value) {
-                    this.removeRedactionGlobally(r.value);
+
+                const allRedactions = Redactor.getAllRedactions();
+                const instances = allRedactions.filter(rd => rd.value === r.value && r.value);
+
+                if (instances.length > 1) {
+                    const confirmGlobal = confirm(`Dit woord komt ${instances.length} keer voor. Wil je deze OVERAL verwijderen?\n\nOK = Overal\nAnnuleren = Alleen dit exemplaar`);
+                    if (confirmGlobal) {
+                        this.removeRedactionGlobally(r.value);
+                    } else {
+                        Redactor.removeRedaction(r.id);
+                    }
                 } else {
                     Redactor.removeRedaction(r.id);
                 }
+
                 this.renderAllRedactions();
                 this.updateRedactionsList();
             });
