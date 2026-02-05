@@ -749,17 +749,27 @@ const Detector = {
             results.stats.categories++;
         }
 
-        // Filter out ignored words (false positives marked by user)
+        // Filter out ignoring words
         results.all = results.all.filter(detection => !this.shouldIgnore(detection.value));
 
-        // Also update byCategory to remove ignored items
-        for (const [category, data] of Object.entries(results.byCategory)) {
-            data.items = data.items.filter(item => !this.shouldIgnore(item.value));
-            if (data.items.length === 0) {
-                delete results.byCategory[category];
-                results.stats.categories--;
+        // Remove overlapping detections
+        results.all = this.removeOverlappingDetections(results.all);
+
+        // Re-distribute to categories
+        results.byCategory = {};
+        results.stats.categories = 0;
+
+        results.all.forEach(item => {
+            if (!results.byCategory[item.type]) {
+                results.byCategory[item.type] = {
+                    name: this.patterns[item.type] ? this.patterns[item.type].name : (item.name || item.type),
+                    icon: item.icon || '🔍',
+                    items: []
+                };
+                results.stats.categories++;
             }
-        }
+            results.byCategory[item.type].items.push(item);
+        });
 
         results.stats.total = results.all.length;
         return results;
@@ -1015,6 +1025,57 @@ const Detector = {
     },
 
     // ==================== END LEARNING FUNCTIONS ====================
+
+    /**
+     * Remove overlapping detections (keep the longest/best one)
+     */
+    removeOverlappingDetections(detections) {
+        if (!detections || detections.length < 2) return detections;
+
+        // Sort by start index, then by length (descending)
+        detections.sort((a, b) => {
+            if (a.startIndex !== b.startIndex) return a.startIndex - b.startIndex;
+            return (b.endIndex - b.startIndex) - (a.endIndex - a.startIndex);
+        });
+
+        const kept = [];
+        let lastItem = null;
+
+        for (const item of detections) {
+            if (!lastItem) {
+                kept.push(item);
+                lastItem = item;
+                continue;
+            }
+
+            // Case 1: Fully contained (e.g. "Jansen" inside "Jan Jansen")
+            if (item.endIndex <= lastItem.endIndex) {
+                continue;
+            }
+
+            // Case 2: Significant overlap (> 80%)
+            if (item.startIndex < lastItem.endIndex) {
+                const overlap = lastItem.endIndex - item.startIndex;
+                const len1 = lastItem.endIndex - lastItem.startIndex;
+                const len2 = item.endIndex - item.startIndex;
+
+                if (overlap > 0.8 * Math.min(len1, len2)) {
+                    // Keep longer one
+                    if (len2 > len1) {
+                        kept.pop();
+                        kept.push(item);
+                        lastItem = item;
+                    }
+                    continue;
+                }
+            }
+
+            kept.push(item);
+            lastItem = item;
+        }
+
+        return kept;
+    },
 
     /**
      * Detect specific custom text for search functionality
