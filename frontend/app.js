@@ -242,6 +242,12 @@ const App = {
             });
         }
 
+        // Audit Log
+        const btnAuditLog = document.getElementById('btn-audit-log');
+        if (btnAuditLog) {
+            btnAuditLog.addEventListener('click', () => this.generateAuditLog());
+        }
+
         this.elements.btnClearMetadata.addEventListener('click', () => this.clearMetadata());
         this.elements.btnClearLearning?.addEventListener('click', () => this.clearLearnedData());
 
@@ -2492,6 +2498,71 @@ const App = {
             this.elements.btnExport.disabled = false;
             this.elements.btnExport.innerHTML = '<span>💾</span> Exporteer veilige PDF';
         }
+    },
+
+    /**
+     * Generate and download an Audit Log CSV
+     */
+    generateAuditLog() {
+        const redactions = Redactor.getAllRedactions();
+        if (redactions.length === 0) {
+            this.showToast('ℹ️ Er zijn nog geen redacties om te loggen.');
+            return;
+        }
+
+        // Header
+        let csvContent = "Pagina;Type;Reden;Locatie;Inhoud (Veilig);Tijdstip\n";
+
+        // Rows
+        redactions.sort((a, b) => a.page - b.page).forEach(r => {
+            const type = r.type === 'manual' ? 'Handmatig' : 'Detectie';
+
+            // Determine reason based on type
+            let reason = 'Handmatige selectie';
+            if (r.type === 'bsn') reason = 'BSN';
+            else if (r.type === 'email') reason = 'E-mailadres';
+            else if (r.type === 'phone') reason = 'Telefoonnummer';
+            else if (r.type === 'iban') reason = 'IBAN';
+            else if (r.type === 'postcode') reason = 'Postcode';
+            else if (r.type === 'name' || r.type === 'names') reason = 'Persoonsnaam';
+            else if (r.type === 'signature') reason = 'Handtekening';
+
+            // Mask content for privacy in the log itself (show only metadata/pattern)
+            let content = r.value || '';
+            let safeContent = '***';
+
+            if (content.length > 0) {
+                if (r.type === 'email') {
+                    // m***@domain.com
+                    const parts = content.split('@');
+                    if (parts.length === 2) {
+                        safeContent = content.substring(0, 1) + '***@' + parts[1];
+                    }
+                } else if (content.length > 5) {
+                    // First 1, last 1
+                    safeContent = content.substring(0, 1) + '***' + content.substring(content.length - 1);
+                }
+            }
+
+            const timestamp = new Date().toLocaleString('nl-NL');
+            const location = `X:${Math.round(r.bounds.x)} Y:${Math.round(r.bounds.y)}`;
+
+            // Escape semicolons and quotes
+            const escape = (txt) => `"${txt && txt.toString().replace(/"/g, '""')}"`;
+
+            csvContent += `${r.page};${type};${reason};${escape(location)};${escape(safeContent)};${timestamp}\n`;
+        });
+
+        // Download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `audit_log_${new Date().toISOString().slice(0, 10)}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     },
 
     /**
