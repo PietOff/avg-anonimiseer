@@ -1614,11 +1614,15 @@ const App = {
                         // Sig bounds are normalized [ymin, xmin, ymax, xmax, confidence]
                         const [ymin, xmin, ymax, xmax, confidence = 100] = sig;
 
-                        // Filter: Low confidence (less than 85%)
-                        if (confidence < 85) {
+                        // Filter: Low confidence (less than 60%)
+                        if (confidence < 60) {
                             console.log(`Skipping signature: Low confidence (${confidence}%)`);
                             return;
                         }
+
+                        // Get dimensions
+                        const pdfPageWidth = this.pageDimensions[i].width;
+                        const pdfPageHeight = this.pageDimensions[i].height;
 
                         const width = ((xmax - xmin) / 1000) * pdfPageWidth;
                         const height = ((ymax - ymin) / 1000) * pdfPageHeight;
@@ -1762,10 +1766,18 @@ const App = {
                             );
 
                             if (!alreadyFound && (!Detector.shouldExclude || !Detector.shouldExclude(searchVal, pos, combinedText))) {
+                                let name = 'AI: ' + (item.type.charAt(0).toUpperCase() + item.type.slice(1));
+                                let icon = '🤖';
+
+                                if (item.type === 'indicator') {
+                                    name = 'Signaalwoord';
+                                    icon = '👁️';
+                                }
+
                                 pageDetections.all.push({
                                     type: item.type, // Map 'name', 'email', etc.
-                                    name: 'AI: ' + (item.type.charAt(0).toUpperCase() + item.type.slice(1)),
-                                    icon: '🤖',
+                                    name: name,
+                                    icon: icon,
                                     value: combinedText.substr(pos, searchVal.length), // Use actual text from doc
                                     page: i,
                                     startIndex: pos,

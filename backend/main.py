@@ -45,9 +45,34 @@ async def analyze_text(request: AnalyzeRequest):
             {"type": "name", "value": "Jan Jansen", "confidence": 0.95},
             {"type": "email", "value": "test@example.com", "confidence": 0.99},
             {"type": "iban", "value": "NL99BANK0123456789", "confidence": 0.98},
-            {"type": "phone", "value": "06-12345678", "confidence": 0.90}
+            {"type": "iban", "value": "NL99BANK0123456789", "confidence": 0.98},
+            {"type": "phone", "value": "06-12345678", "confidence": 0.90},
+            {"type": "indicator", "value": "De heer", "confidence": 1.0}
         ]
 
+    # 1. Regex Detection (Fast, deterministic)
+    import re
+    regex_results = []
+    
+    # List of signal words (case-insensitive)
+    signal_patterns = [
+        r"\b(de\s+heer)\b", r"\b(dhr\.?)\b",
+        r"\b(mevrouw)\b", r"\b(mw\.?)\b",
+        r"\b(veldwerker)\b", r"\b(boormeester)\b",
+        r"\b(projectleider)\b", r"\b(adviseur)\b",
+        r"\b(contactpersoon)\b"
+    ]
+    
+    for pattern in signal_patterns:
+        matches = re.finditer(pattern, request.text, re.IGNORECASE)
+        for match in matches:
+            regex_results.append({
+                "type": "indicator",
+                "value": match.group(0), # The actual matched text
+                "confidence": 1.0
+            })
+
+    # 2. AI Detection (Mistral)
     # Truncate request to avoid token limits (conservative limit)
     safe_text = request.text[:15000]
 
@@ -103,7 +128,10 @@ Each object must have:
             # No, content is a string. The frontend expects an array of found items.
             import json
             result = json.loads(content)
-            return result.get("found", [])
+            mistral_findings = result.get("found", [])
+            
+            # Merge results
+            return regex_results + mistral_findings
 
     except httpx.HTTPStatusError as e:
         print(f"Mistral API Error: {e.response.text}")
