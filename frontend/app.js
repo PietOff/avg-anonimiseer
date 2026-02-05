@@ -1797,9 +1797,9 @@ const App = {
 
                 // Process Results
                 if (signatures && signatures.length > 0) {
-                    signatures.forEach(sig => {
-                        // Sig bounds are normalized [ymin, xmin, ymax, xmax, confidence]
-                        const [ymin, xmin, ymax, xmax, confidence = 100] = sig;
+                    signatures.forEach((sig, index) => {
+                        // Sig bounds are normalized [xmin, ymin, xmax, ymax, confidence]
+                        const [xmin, ymin, xmax, ymax, confidence = 100] = sig;
 
                         // Filter: Low confidence (less than 60%)
                         if (confidence < 60) {
@@ -1841,9 +1841,11 @@ const App = {
                             };
                         }
 
+                        const sigValue = `Handtekening (Visueel) - P${i}-${index + 1}`;
+
                         this.currentDetections.all.push({
                             type: 'signature',
-                            value: 'Handtekening (Visueel)',
+                            value: sigValue,
                             page: i,
                             bounds: { x, y: yBottom, width, height },
                             selected: true
@@ -1851,11 +1853,11 @@ const App = {
 
                         this.currentDetections.byCategory['signature'].items.push({
                             type: 'signature',
-                            value: 'Handtekening (Visueel)',
+                            value: sigValue,
                             page: i,
                             bounds: { x, y: yBottom, width, height },
                             selected: true,
-                            name: 'Visuele Handtekening'
+                            name: `Visuele Handtekening ${index + 1}`
                         });
 
                         totalSignatures++;
