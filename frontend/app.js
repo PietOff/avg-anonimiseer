@@ -205,10 +205,11 @@ const App = {
         });
 
         this.elements.btnExport.addEventListener('click', async () => {
-            if (this.elements.btnExport.classList.contains('btn-disabled')) {
-                const remaining = this.totalPages - this.validatedPages.size;
-                alert(`Controleer eerst alle pagina's! Nog ${remaining} te gaan.`);
-                return;
+            // Soft validation check
+            const remaining = this.totalPages - this.validatedPages.size;
+            if (remaining > 0) {
+                const proceed = confirm(`Let op: Nog ${remaining} pagina('s) zijn niet gemarkeerd als gecontroleerd.\n\nWil je toch exporteren?`);
+                if (!proceed) return;
             }
             this.exportPDF();
         });
@@ -515,14 +516,15 @@ const App = {
     updateExportButtonState() {
         if (!this.elements.btnExport) return;
 
+        // Validation is now soft-check (warning only)
+        // We always allow export, but visual feedback is nice
         const allValidated = this.validatedPages.size === this.totalPages;
+        this.elements.btnExport.classList.remove('btn-disabled'); // Ensure always enabled
 
         if (allValidated) {
-            this.elements.btnExport.classList.remove('btn-disabled');
             this.elements.btnExport.title = "Exporteer veilige PDF";
         } else {
-            this.elements.btnExport.classList.add('btn-disabled');
-            this.elements.btnExport.title = `Nog ${this.totalPages - this.validatedPages.size} pagina's te controleren`;
+            this.elements.btnExport.title = `Nog ${this.totalPages - this.validatedPages.size} pagina's te controleren (Klik om toch te exporteren)`;
         }
     },
 
