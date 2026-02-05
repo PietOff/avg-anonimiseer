@@ -198,15 +198,17 @@ const Detector = {
         // Common Dutch name prefixes that might indicate a name follows
         prefixes: [
             // Standard titles
-            'de heer', 'mevrouw', 'mevr.', 'dhr.', 'mr.', 'dr.', 'ir.', 'prof.', 'ing.', 'drs.', 'bc.', 'ds.', 'fa.', 'fam.',
+            'de heer', 'heer', 'heren', 'mevrouw', 'mevr.', 'dhr.', 'mr.', 'dr.', 'ir.', 'prof.', 'ing.', 'ingenieur', 'drs.', 'bc.', 'ds.', 'fa.', 'fam.', 'familie',
             // Governance & Roles (from user feedback)
             'wethouder', 'burgemeester', 'secretaris', 'griffier', 'voorzitter', 'directeur',
             'inspecteur', 'behandelaar', 'saneerder', 'coördinator', 'adviseur', 'projectleider',
             'contactpersoon', 'opdrachtgever', 'aanvrager', 'melder', 'indiener', 'auteur', 'steller',
+            'portefeuillehouder', 'portefuillehouder', 'db lid', 'db-lid', 'monsternemer', 'veldwerker', 'boormeester', 'commissie',
             // Context triggers
-            'geachte', 'beste', 't.a.v.', 'attentie van', 'namens',
+            'geachte', 'beste', 't.a.v.', 'attentie van', 'namens', 'aangetekend',
             'ingediend door', 'uitgevoerd door', 'behandeld door', 'verzonden door', 'opgesteld door',
-            'afschrift aan', 'terecht bij', 'akkoord', 'paraaf', 'handtekening'
+            'afschrift aan', 'terecht bij', 'akkoord', 'paraaf', 'handtekening', 'ondertekening',
+            'getekend', 'gecontroleerd', 'geautoriseerd', 'hoogachtend'
         ],
         // Pattern for capitalized words (potential names)
         capitalizedWords: /\b[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\s+(?:van|de|der|den|het|ten|ter|te)\s+)?[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+\b/g
@@ -787,9 +789,10 @@ const Detector = {
         const seen = new Set();
 
         // Strategy 1: Find names after known prefixes (high confidence)
+        // Updated regex: Allows optional dot, AND optional colon (e.g. "Boormeester: Jan" or "De heer Jan")
         for (const prefix of this.namePatterns.prefixes) {
             const regex = new RegExp(
-                prefix.replace('.', '\\.') + '\\s+([A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\\s+(?:van|de|der|den|het|ten|ter|te)\\s+)?[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+)',
+                prefix.replace('.', '\\.') + '\\s*(?:[:.]|\\s)\\s*([A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\\s+(?:van|de|der|den|het|ten|ter|te)\\s+)?[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+)',
                 'gi'
             );
 

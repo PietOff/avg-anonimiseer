@@ -298,6 +298,12 @@ const App = {
                 try {
                     await Redactor.init(self.pdfLibData);
                     await self.displayMetadata();
+
+                    // AUTO-DETECT NAMES (Added Feature)
+                    setTimeout(() => {
+                        self.autoDetectNames();
+                    }, 500);
+
                 } catch (redactorError) {
                     console.error('Redactor init error:', redactorError.message);
                     self.elements.metadataInfo.innerHTML = '<p class="empty-state">Redactie tijdelijk niet beschikbaar</p>';
@@ -1565,10 +1571,134 @@ const App = {
 
 
     /**
+     * Automatic Name Detection on Load
+     * Scans specifically for names (via prefixes) and adds them as indicators
+     */
+    async autoDetectNames() {
+        if (!this.pdfDoc) return;
+
+        console.log("Starting auto-detection for names...");
+        this.showToast("🔎 Scannen op namen...");
+
+        let totalFound = 0;
+
+        try {
+            // Loop through all pages
+            const numPages = this.pdfDoc.numPages;
+
+            for (let i = 1; i <= numPages; i++) {
+                const page = await this.pdfDoc.getPage(i);
+                const textContent = await page.getTextContent();
+                const text = textContent.items.map(item => item.str).join(' ');
+
+                // Use Detector but only take 'names' category
+                const results = Detector.detect(text, i);
+
+                if (results.byCategory && results.byCategory['names']) {
+                    const names = results.byCategory['names'].items;
+
+                    for (const item of names) {
+                        // Create INDICATOR redaction
+                        // Map text index to PDF bounds
+                        const bounds = await this.findTextBoundsOnPage(i, item.value);
+                        if (bounds) {
+                            if (!this.isAreaRedacted(i, bounds)) {
+                                // Add as indicator (yellow box)
+                                Redactor.addRedaction(i, bounds, 'indicator', item.value);
+                                totalFound++;
+                            }
+                        }
+                    }
+                }
+
+                // Yield to UI thread every few pages
+                if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+            }
+
+            if (totalFound > 0) {
+                this.showToast(`✨ ${totalFound} mogelijke namen gemarkeerd.`);
+                await this.renderAllRedactions();
+                this.updateRedactionsList();
+            } else {
+                console.log("Auto-detection finished: No names found.");
+            }
+
+        } catch (err) {
+            console.error("Auto-detect error:", err);
+        }
+    },
+
+    /**
+     * Helper to find bounds of specific text on a page
+     * (Simplified version of global search logic)
+     */
+    async findTextBoundsOnPage(pageNum, textToFind) {
+        try {
+            const page = await this.pdfDoc.getPage(pageNum);
+            const textContent = await page.getTextContent();
+            const textItems = textContent.items;
+
+            const cleanSearch = textToFind.trim().toLowerCase().replace(/\s+/g, '');
+            if (!cleanSearch) return null;
+
+            for (let itemIndex = 0; itemIndex < textItems.length; itemIndex++) {
+                const startItem = textItems[itemIndex];
+
+                // Try single item match
+                let combined = startItem.str;
+                let normalizedCombined = combined.toLowerCase().replace(/\s+/g, '');
+
+                if (normalizedCombined.includes(cleanSearch)) {
+                    // Found in single item
+                    return {
+                        x: startItem.transform[4],
+                        y: startItem.transform[5],
+                        width: startItem.width || (startItem.str.length * 5),
+                        height: startItem.height || 12
+                    };
+                }
+
+                // Try sequence (up to 4 items)
+                const itemsInSequence = [startItem];
+                for (let ahead = 1; ahead <= 4; ahead++) {
+                    const nextItem = textItems[itemIndex + ahead];
+                    if (!nextItem) break;
+
+                    combined += ' ' + nextItem.str;
+                    normalizedCombined = combined.toLowerCase().replace(/\s+/g, '');
+                    itemsInSequence.push(nextItem);
+
+                    if (normalizedCombined.includes(cleanSearch)) {
+                        // Found in sequence - calculate union bounds
+                        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                        itemsInSequence.forEach(seqItem => {
+                            const bx = seqItem.transform[4];
+                            const by = seqItem.transform[5];
+                            const bh = seqItem.height || 12;
+                            const bw = seqItem.width || (seqItem.str.length * 5);
+                            minX = Math.min(minX, bx);
+                            minY = Math.min(minY, by);
+                            maxX = Math.max(maxX, bx + bw);
+                            maxY = Math.max(maxY, by + bh);
+                        });
+
+                        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Bounds search error:", e);
+        }
+        return null;
+    },
+
+    /**
      * Open detection modal
      */
     async openDetectionModal() {
         this.elements.modal.classList.remove('hidden');
+        // ... (rest of implementation)
+
         this.elements.detectionProgress.classList.remove('hidden');
         this.elements.detectionResults.classList.add('hidden');
         this.elements.btnApplyDetections.classList.add('hidden');
