@@ -1229,6 +1229,13 @@ const App = {
         this.pageCanvases = [canvas];
         this.pageContainers = [pageWrapper];
 
+        // Store dimensions for detection
+        this.pageDimensions = []; // Reset
+        this.pageDimensions[1] = {
+            width: img.width,
+            height: img.height
+        };
+
         this.addPageMouseEvents(pageWrapper, 1, canvas, redactionLayer);
     },
 
@@ -1570,18 +1577,33 @@ const App = {
             progressText.textContent = `Visuele analyse van pagina ${i}/${this.totalPages}...`;
 
             try {
+                let base64;
                 // Get page canvas
-                const page = await this.pdfDoc.getPage(i);
-                const viewport = page.getViewport({ scale: 1.5 }); // Higher quality for vision
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
+                if (this.pdfDoc) {
+                    const page = await this.pdfDoc.getPage(i);
+                    const viewport = page.getViewport({ scale: 1.5 }); // Higher quality for vision
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
 
-                await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    base64 = canvas.toDataURL('image/jpeg', 0.8);
+                } else if (this.currentImage && i === 1) {
+                    // Image support
+                    const canvas = document.createElement('canvas');
+                    // Limit max size for API performance? 
+                    // For now use full size or scaled if huge
+                    canvas.width = this.currentImage.width;
+                    canvas.height = this.currentImage.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(this.currentImage, 0, 0);
+                    base64 = canvas.toDataURL('image/jpeg', 0.8);
+                } else {
+                    continue;
+                }
 
-                // Create clean image (no existing redactions)
-                const base64 = canvas.toDataURL('image/jpeg', 0.8);
+                // Call Vision API
 
                 // Call Vision API
                 const signatures = await MistralService.analyzeImage(base64, i);
@@ -1671,6 +1693,14 @@ const App = {
         };
 
         this.textItemsPerPage = new Map();
+
+        // Guard: Text detection requires PDF text layer
+        if (!this.pdfDoc) {
+            console.log("Text detection skipped: No PDF loaded (likely an image).");
+            this.currentDetections = allDetections;
+            this.displayDetectionResults(allDetections);
+            return;
+        }
 
         for (let i = 1; i <= this.totalPages; i++) {
             const page = await this.pdfDoc.getPage(i);
