@@ -1611,16 +1611,25 @@ const App = {
                 // Process Results
                 if (signatures && signatures.length > 0) {
                     signatures.forEach(sig => {
-                        // Sig bounds are normalized [ymin, xmin, ymax, xmax] (0-1000)
-                        // Convert to PDF coordinates
-                        // PDF width/height (unscaled)
-                        const pdfPageWidth = this.pageDimensions[i].width;
-                        const pdfPageHeight = this.pageDimensions[i].height;
+                        // Sig bounds are normalized [ymin, xmin, ymax, xmax, confidence]
+                        const [ymin, xmin, ymax, xmax, confidence = 100] = sig;
 
-                        const [ymin, xmin, ymax, xmax] = sig;
+                        // Filter: Low confidence (less than 85%)
+                        if (confidence < 85) {
+                            console.log(`Skipping signature: Low confidence (${confidence}%)`);
+                            return;
+                        }
 
                         const width = ((xmax - xmin) / 1000) * pdfPageWidth;
                         const height = ((ymax - ymin) / 1000) * pdfPageHeight;
+
+                        // Filter: Too small (likely noise/dots)
+                        // E.g. less than 1% of page width or height
+                        if (width < pdfPageWidth * 0.02 || height < pdfPageHeight * 0.01) {
+                            console.log(`Skipping signature: Too small (${width.toFixed(0)}x${height.toFixed(0)})`);
+                            return;
+                        }
+
                         const x = (xmin / 1000) * pdfPageWidth;
 
                         // Y is messy. Vision usually gives top-down. PDF is bottom-up.
