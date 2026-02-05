@@ -41,6 +41,40 @@ const Redactor = {
             this.redactions.set(pageNumber, []);
         }
 
+        const pageRedactions = this.redactions.get(pageNumber);
+
+        // Check for overlaps to prevent duplicate/stacked boxes
+        // If a new box implies >80% overlap with an existing one, skip or merge.
+        const isDuplicate = pageRedactions.some(existing => {
+            // Check intersection logic
+            const r1 = existing.bounds;
+            const r2 = bounds;
+
+            if (r1.x < r2.x + r2.width &&
+                r1.x + r1.width > r2.x &&
+                r1.y < r2.y + r2.height &&
+                r1.y + r1.height > r2.y) {
+
+                // Overlap detected. Calculate area.
+                const x_overlap = Math.max(0, Math.min(r1.x + r1.width, r2.x + r2.width) - Math.max(r1.x, r2.x));
+                const y_overlap = Math.max(0, Math.min(r1.y + r1.height, r2.y + r2.height) - Math.max(r1.y, r2.y));
+                const overlapArea = x_overlap * y_overlap;
+                const r1Area = r1.width * r1.height;
+                const r2Area = r2.width * r2.height;
+
+                // If > 70% of either box is covered by the other, consider it a duplicate/redundant
+                if (overlapArea > 0.7 * r1Area || overlapArea > 0.7 * r2Area) {
+                    return true;
+                }
+            }
+            return false;
+        });
+
+        if (isDuplicate) {
+            console.log('Skipping overlapping redaction');
+            return null;
+        }
+
         const redaction = {
             id: `redact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             pageNumber,
@@ -50,7 +84,7 @@ const Redactor = {
             createdAt: new Date().toISOString()
         };
 
-        this.redactions.get(pageNumber).push(redaction);
+        pageRedactions.push(redaction);
         this.saveState();
         return redaction;
     },
