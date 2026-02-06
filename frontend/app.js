@@ -47,17 +47,59 @@ const App = {
     /**
      * Initialize the application
      */
-    init() {
+    async init() {
         this.cacheElements();
         this.bindEvents();
         this.bindSearchEvents();
         console.log('AVG Anonimiseer initialized');
+
+        // Initialize Persistence
+        if (typeof Persistence !== 'undefined') {
+            try {
+                await Persistence.init();
+                this.checkSavedSession();
+            } catch (e) {
+                console.error('Persistence init failed:', e);
+            }
+        }
 
         if (typeof pdfjsLib === 'undefined') {
             console.error('PDF.js library not loaded!');
         }
         if (typeof PDFLib === 'undefined') {
             console.error('pdf-lib library not loaded!');
+        }
+    },
+
+    /**
+     * Check for and restore saved session
+     */
+    async checkSavedSession() {
+        try {
+            const file = await Persistence.loadFile();
+            if (file) {
+                const metadata = await Persistence.loadMetadata();
+                console.log('Restoring saved session...', metadata);
+
+                if (confirm('Er is een eerder document gevonden. Wil je verdergaan waar je gebleven was?')) {
+                    const arrayBuffer = await file.arrayBuffer();
+                    await this.loadPDFValues(arrayBuffer, metadata ? metadata.name : 'Hersteld document');
+
+                    // Restore redactions
+                    const savedState = await Persistence.loadState();
+                    if (savedState) {
+                        Redactor.redactions = new Map(JSON.parse(savedState));
+                        Redactor.saveState(); // Update history with restored state
+                        this.renderAllRedactions();
+                        this.updateRedactionsList();
+                        this.showToast('Sessie hersteld ✅');
+                    }
+                } else {
+                    await Persistence.clearSession();
+                }
+            }
+        } catch (e) {
+            console.error('Error restoring session:', e);
         }
     },
 
@@ -248,7 +290,25 @@ const App = {
             btnAuditLog.addEventListener('click', () => this.generateAuditLog());
         }
 
-        this.elements.btnClearMetadata.addEventListener('click', () => this.clearMetadata());
+        this.elements.btnClearMetadata.addEventListener('click', () => {
+            this.clearMetadata();
+            // Also option to clear persistence explicitly? 
+            // For now, let's keep it separate or implicitly clear if user starts new file.
+        });
+
+        // Add specific "Hervat/Reset" UI if needed, but for now init check handles it.
+
+        // Manual "Reset App" button (could look for id 'btn-reset-app')
+        const btnResetApp = document.getElementById('btn-reset-app');
+        if (btnResetApp) {
+            btnResetApp.addEventListener('click', async () => {
+                if (confirm('Weet je zeker dat je alles wilt wissen en opnieuw wilt beginnen?')) {
+                    if (typeof Persistence !== 'undefined') await Persistence.clearSession();
+                    window.location.reload();
+                }
+            });
+        }
+
         this.elements.btnClearLearning?.addEventListener('click', () => this.clearLearnedData());
 
         // Zoom
@@ -333,6 +393,15 @@ const App = {
                 // Initialize Redactor
                 try {
                     await Redactor.init(self.pdfLibData);
+
+                    // Save to persistence
+                    if (typeof Persistence !== 'undefined') {
+                        // Re-create blob if needed or just save the buffer if possible (Persistence expects Blob/File)
+                        const blob = new Blob([self.pdfLibData], { type: 'application/pdf' });
+                        Persistence.saveFile(blob);
+                        Persistence.saveMetadata({ name: file.name, date: new Date().toISOString() });
+                    }
+
                     await self.displayMetadata();
 
                     // AUTO-DETECT NAMES (Added Feature)
@@ -1610,6 +1679,12 @@ const App = {
         list.innerHTML = '';
 
         const redactions = Redactor.getAllRedactions();
+
+        // Save state to persistence on every update
+        if (typeof Persistence !== 'undefined') {
+            const state = JSON.stringify(Array.from(Redactor.redactions.entries()));
+            Persistence.saveState(state);
+        }
 
         if (redactions.length === 0) {
             list.innerHTML = '<p class="empty-state">Nog geen redacties toegevoegd</p>';
