@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import httpx
+import asyncio
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -10,9 +11,10 @@ app = FastAPI()
 origins = [
     "http://localhost:3000",
     "http://localhost:5000",
-    "http://127.0.0.1:5500", # Common VS Code Live Server
-    "https://avg-anonimiseer.vercel.app", # Adjust if you have a specific domain
-    "*" # Allow all for now during dev, tighten later
+    "http://127.0.0.1:5500",  # Common VS Code Live Server
+    "https://avg-anonimiseer.vercel.app",
+    "https://avg-anonimiseer-eight.vercel.app",  # Current production URL
+    "*"  # Allow all for now during dev, tighten later
 ]
 
 app.add_middleware(
@@ -26,6 +28,52 @@ app.add_middleware(
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 MODEL = "mistral-large-latest"
+
+# Retry configuration
+MAX_RETRIES = 3
+RETRY_DELAYS = [1, 2, 4]  # Exponential backoff: 1s, 2s, 4s
+
+
+async def call_mistral_with_retry(client: httpx.AsyncClient, payload: dict, timeout: float = 30.0) -> dict:
+    """Call Mistral API with retry logic for rate limiting (429 errors)."""
+    last_error = None
+    
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = await client.post(
+                MISTRAL_API_URL,
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {MISTRAL_API_KEY}"
+                },
+                timeout=timeout
+            )
+            response.raise_for_status()
+            return response.json()
+            
+        except httpx.HTTPStatusError as e:
+            last_error = e
+            if e.response.status_code == 429:
+                # Rate limited - wait and retry
+                if attempt < MAX_RETRIES - 1:
+                    delay = RETRY_DELAYS[attempt]
+                    print(f"⚠️ Rate limited (429). Retrying in {delay}s... (attempt {attempt + 1}/{MAX_RETRIES})")
+                    await asyncio.sleep(delay)
+                    continue
+            # For non-429 errors, raise immediately
+            raise
+        except httpx.TimeoutException as e:
+            last_error = e
+            if attempt < MAX_RETRIES - 1:
+                delay = RETRY_DELAYS[attempt]
+                print(f"⚠️ Timeout. Retrying in {delay}s... (attempt {attempt + 1}/{MAX_RETRIES})")
+                await asyncio.sleep(delay)
+                continue
+            raise
+    
+    # All retries exhausted
+    raise last_error
 
 class AnalyzeRequest(BaseModel):
     text: str
@@ -100,32 +148,20 @@ Each object must have:
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                MISTRAL_API_URL,
-                json={
-                    "model": MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": safe_text}
-                    ],
-                    "response_format": {"type": "json_object"},
-                    "temperature": 0.1
-                },
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {MISTRAL_API_KEY}"
-                },
-                timeout=30.0
-            )
-            response.raise_for_status()
-            data = response.json()
+            payload = {
+                "model": MODEL,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": safe_text}
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.1
+            }
+            data = await call_mistral_with_retry(client, payload, timeout=30.0)
             
             # Extract content
             content = data["choices"][0]["message"]["content"]
             
-            # mistral often returns a string json, we need to ensure we return an object 
-            # but here we just return the raw JSON structure Mistral gave us content-wise? 
-            # No, content is a string. The frontend expects an array of found items.
             import json
             result = json.loads(content)
             mistral_findings = result.get("found", [])
@@ -135,7 +171,7 @@ Each object must have:
 
     except httpx.HTTPStatusError as e:
         print(f"Mistral API Error: {e.response.text}")
-        raise HTTPException(status_code=502, detail="Error communicating with AI provider.")
+        raise HTTPException(status_code=502, detail="Error communicating with AI provider. Please try again.")
     except Exception as e:
         print(f"Server Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -174,30 +210,21 @@ async def analyze_image(request: AnalyzeImageRequest):
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                MISTRAL_API_URL,
-                json={
-                    "model": VISION_MODEL,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": system_prompt},
-                                {"type": "image_url", "image_url": {"url": request.image}} 
-                            ]
-                        }
-                    ],
-                    "response_format": {"type": "json_object"},
-                    "temperature": 0.1
-                },
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {MISTRAL_API_KEY}"
-                },
-                timeout=60.0
-            )
-            response.raise_for_status()
-            data = response.json()
+            payload = {
+                "model": VISION_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": system_prompt},
+                            {"type": "image_url", "image_url": {"url": request.image}} 
+                        ]
+                    }
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.1
+            }
+            data = await call_mistral_with_retry(client, payload, timeout=60.0)
             content = data["choices"][0]["message"]["content"]
             
             import json
@@ -208,3 +235,4 @@ async def analyze_image(request: AnalyzeImageRequest):
         print(f"Vision Error: {str(e)}")
         # Fallback empty list safely
         return []
+
