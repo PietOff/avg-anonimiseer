@@ -1828,11 +1828,12 @@ const App = {
                 const textContent = await page.getTextContent();
                 const text = textContent.items.map(item => item.str).join(' ');
 
-                // Use Detector but only take 'names' category
+                // Use Detector but only take 'name' category
+                // Note: Detector.detect re-distributes by item.type, and names have type: 'name'
                 const results = Detector.detect(text, i);
 
-                if (results.byCategory && results.byCategory['names']) {
-                    const names = results.byCategory['names'].items;
+                if (results.byCategory && results.byCategory['name']) {
+                    const names = results.byCategory['name'].items;
 
                     for (const item of names) {
                         // Create INDICATOR redaction
