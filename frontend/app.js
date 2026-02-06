@@ -2023,6 +2023,7 @@ const App = {
                 if (signatures && signatures.length > 0) {
                     signatures.forEach((sig, index) => {
                         // Sig bounds are normalized [xmin, ymin, xmax, ymax, confidence]
+                        // Vision coords: Top-Left origin (0,0), Y increases downward
                         const [xmin, ymin, xmax, ymax, confidence = 100] = sig;
 
                         // Filter: Low confidence (less than 60%)
@@ -2031,30 +2032,31 @@ const App = {
                             return;
                         }
 
-                        // Get dimensions
+                        // Get PDF page dimensions
                         const pdfPageWidth = this.pageDimensions[i].width;
                         const pdfPageHeight = this.pageDimensions[i].height;
 
+                        // Convert normalized (0-1000) to PDF coordinates
+                        // Note: PDF uses bottom-left origin with Y increasing upward
+                        // Vision uses top-left origin with Y increasing downward
+
+                        const x = (xmin / 1000) * pdfPageWidth;
                         const width = ((xmax - xmin) / 1000) * pdfPageWidth;
                         const height = ((ymax - ymin) / 1000) * pdfPageHeight;
 
+                        // CORRECT Y transformation:
+                        // Vision ymax (bottom of box in vision coords) -> PDF y (bottom of box)
+                        // PDF y = PageHeight - (Vision ymax as percentage of page)
+                        const visionYMax = (ymax / 1000) * pdfPageHeight; // Bottom of box in top-down coords
+                        const y = pdfPageHeight - visionYMax; // Convert to bottom-up PDF coords
+
                         // Filter: Too small (likely noise/dots)
-                        // E.g. less than 1% of page width or height
                         if (width < pdfPageWidth * 0.02 || height < pdfPageHeight * 0.01) {
                             console.log(`Skipping signature: Too small (${width.toFixed(0)}x${height.toFixed(0)})`);
                             return;
                         }
 
-                        const x = (xmin / 1000) * pdfPageWidth;
-
-                        // Y is messy. Vision usually gives top-down. PDF is bottom-up.
-                        // But wait, our API prompt said normalized coordinates. 
-                        // Let's assume Top-Left 0,0 for Vision. 
-                        // PDF 0,0 is Bottom-Left.
-                        // So y (bottom) = PageHeight - (y_top + height)
-                        // y_top_px = (ymin / 1000) * pdfPageHeight
-                        const yTop = (ymin / 1000) * pdfPageHeight;
-                        const yBottom = pdfPageHeight - yTop - height;
+                        console.log(`Signature ${index + 1} on page ${i}: x=${x.toFixed(1)}, y=${y.toFixed(1)}, w=${width.toFixed(1)}, h=${height.toFixed(1)}, conf=${confidence}%`);
 
                         // Add to detections
                         if (!this.currentDetections.byCategory['signature']) {
@@ -2071,7 +2073,7 @@ const App = {
                             type: 'signature',
                             value: sigValue,
                             page: i,
-                            bounds: { x, y: yBottom, width, height },
+                            bounds: { x, y, width, height },
                             selected: true
                         });
 
@@ -2079,7 +2081,7 @@ const App = {
                             type: 'signature',
                             value: sigValue,
                             page: i,
-                            bounds: { x, y: yBottom, width, height },
+                            bounds: { x, y, width, height },
                             selected: true,
                             name: `Visuele Handtekening ${index + 1}`
                         });

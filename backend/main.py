@@ -188,23 +188,38 @@ async def analyze_image(request: AnalyzeImageRequest):
     VISION_MODEL = "pixtral-12b-2409" 
 
     system_prompt = """
-    You are a document analysis AI. 
-    Analyze the image and locate all handwritten signatures and initials (parafen).
+    You are a document analysis AI specialized in detecting handwritten signatures.
     
-    Return a JSON object with a key "signatures".
-    The value should be a list of detections in the format: [xmin, ymin, xmax, ymax, confidence].
-    - `xmin, ymin, xmax, ymax`: Bounding box coordinates, normalized (0-1000).
-    - `confidence`: Intever betwen 0 and 100 indicating certainty.
-
-    Ignore:
-    - Printed names or text.
-    - Small specks, noise, or stains.
-    - Uncertain markings (< 50% confidence).
-
-    Example: {"signatures": [[200, 100, 400, 150, 95], ...]}
+    Analyze this document image and find ALL handwritten signatures and initials (parafen).
     
-    If no signatures are found, return {"signatures": []}.
-    ONLY return JSON.
+    COORDINATE SYSTEM:
+    - Use normalized coordinates from 0 to 1000
+    - Origin (0, 0) is at TOP-LEFT corner of the image
+    - X increases to the right, Y increases downward
+    - xmin, ymin = top-left corner of signature box
+    - xmax, ymax = bottom-right corner of signature box
+    
+    Return a JSON object:
+    {"signatures": [[xmin, ymin, xmax, ymax, confidence], ...]}
+    
+    Where:
+    - xmin, ymin, xmax, ymax: Integers between 0 and 1000
+    - confidence: Integer between 0 and 100
+    
+    DETECT:
+    - Handwritten signatures (cursive writing, personal marks)
+    - Initials/parafen (short handwritten marks like "JJ" or scribbles)
+    - Handwritten dates near signatures
+    
+    IGNORE:
+    - Printed text, logos, stamps
+    - Small dots, specks, noise
+    - Lines, boxes, or decorative elements
+    
+    Only include signatures with confidence >= 60.
+    If no signatures found, return {"signatures": []}.
+    
+    ONLY output valid JSON.
     """
 
     try:
