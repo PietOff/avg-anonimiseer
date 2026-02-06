@@ -693,7 +693,10 @@ const App = {
             redactionLayer.appendChild(preview);
         });
 
-        wrapper.addEventListener('mousemove', (e) => {
+        // Debounce timer for text preview
+        let textPreviewTimeout = null;
+
+        wrapper.addEventListener('mousemove', async (e) => {
             if (!this.isDrawing || this.currentDrawingPage !== pageNum) return;
 
             const rect = canvas.getBoundingClientRect();
@@ -705,10 +708,59 @@ const App = {
                 const width = currentX - this.drawStart.x;
                 const height = currentY - this.drawStart.y;
 
-                preview.style.left = (width < 0 ? currentX : this.drawStart.x) + 'px';
-                preview.style.top = (height < 0 ? currentY : this.drawStart.y) + 'px';
-                preview.style.width = Math.abs(width) + 'px';
-                preview.style.height = Math.abs(height) + 'px';
+                const left = width < 0 ? currentX : this.drawStart.x;
+                const top = height < 0 ? currentY : this.drawStart.y;
+                const absWidth = Math.abs(width);
+                const absHeight = Math.abs(height);
+
+                preview.style.left = left + 'px';
+                preview.style.top = top + 'px';
+                preview.style.width = absWidth + 'px';
+                preview.style.height = absHeight + 'px';
+
+                // LIVE TEXT PREVIEW: Show what text will be selected
+                // Debounce to avoid too many calls (every 100ms)
+                if (absWidth > 10 && absHeight > 5) {
+                    clearTimeout(textPreviewTimeout);
+                    textPreviewTimeout = setTimeout(async () => {
+                        try {
+                            const page = await this.pdfDoc.getPage(pageNum);
+                            const viewport = page.getViewport({ scale: 1.0 });
+                            const pageHeight = viewport.height;
+
+                            // Convert canvas coords to PDF coords
+                            const pdfBounds = Redactor.canvasToPdfCoords(
+                                { x: left, y: top, width: absWidth, height: absHeight },
+                                pageHeight,
+                                this.scale
+                            );
+
+                            // Get overlapping text (quick version)
+                            const previewText = await this.getPreviewText(pageNum, pdfBounds);
+
+                            // Show/update preview label
+                            let label = preview.querySelector('.text-preview-label');
+                            if (!label) {
+                                label = document.createElement('div');
+                                label.className = 'text-preview-label';
+                                preview.appendChild(label);
+                            }
+
+                            if (previewText) {
+                                // Truncate if too long
+                                const displayText = previewText.length > 30
+                                    ? previewText.substring(0, 27) + '...'
+                                    : previewText;
+                                label.textContent = `"${displayText}"`;
+                                label.style.display = 'block';
+                            } else {
+                                label.style.display = 'none';
+                            }
+                        } catch (err) {
+                            // Silently ignore preview errors
+                        }
+                    }, 100); // 100ms debounce
+                }
             }
         });
 
@@ -783,6 +835,60 @@ const App = {
                 }
             }
         });
+    },
+
+    /**
+     * Quick text preview during drag
+     * Faster than full extraction - just gets the text without complex scoring
+     */
+    async getPreviewText(pageNum, pdfBounds) {
+        try {
+            const page = await this.pdfDoc.getPage(pageNum);
+            const textContent = await page.getTextContent();
+
+            const texts = [];
+
+            for (const item of textContent.items) {
+                if (!item.str || !item.str.trim()) continue;
+
+                const itemX = item.transform[4];
+                const itemY = item.transform[5];
+                const itemWidth = item.width || (item.str.length * 5);
+                const itemHeight = item.height || 10;
+
+                // Quick overlap check
+                const itemRight = itemX + itemWidth;
+                const itemTop = itemY + itemHeight;
+                const selRight = pdfBounds.x + pdfBounds.width;
+                const selTop = pdfBounds.y + pdfBounds.height;
+
+                const xOverlap = Math.max(0, Math.min(itemRight, selRight) - Math.max(itemX, pdfBounds.x));
+                const yOverlap = Math.max(0, Math.min(itemTop, selTop) - Math.max(itemY, pdfBounds.y));
+
+                if (xOverlap > 0 && yOverlap > 0) {
+                    const itemArea = itemWidth * itemHeight;
+                    const overlapArea = xOverlap * yOverlap;
+                    const overlapPercent = (overlapArea / itemArea) * 100;
+
+                    if (overlapPercent >= 20) {
+                        texts.push({ text: item.str.trim(), x: itemX, y: itemY });
+                    }
+                }
+            }
+
+            if (texts.length === 0) return null;
+
+            // Sort by Y then X for reading order
+            texts.sort((a, b) => {
+                const yDiff = Math.abs(a.y - b.y);
+                if (yDiff < 10) return a.x - b.x; // Same line
+                return b.y - a.y; // Different lines (PDF Y is inverted)
+            });
+
+            return texts.map(t => t.text).join(' ');
+        } catch (err) {
+            return null;
+        }
     },
 
     /**
