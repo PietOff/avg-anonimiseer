@@ -564,6 +564,9 @@ const Detector = {
                     // Skip very short values or values that look like section headers
                     if (value.length < 3 || /^[0-9\.\s]+$/.test(value)) continue;
 
+                    // Skip suspiciously long values (probably false positive read of a whole sentence)
+                    if (value.length > 60) continue;
+
                     detections.push({
                         type: 'labeled_field',
                         name: fieldDef.name,
@@ -616,6 +619,17 @@ const Detector = {
 
                 // Skip very short matches
                 if (value.length < 5) continue;
+
+                // NEW: Skip suspiciously long matches (likely OCR errors merging lines or map text)
+                // A signature/name shouldn't be a paragraph.
+                if (value.length > 50) continue;
+
+                // Extra Safety: Check if it contains map terms that might successfully mask as names
+                // e.g. "Schaal 1:1000" might look like "Schaal Een" to some loose regexes?
+                const lowerValue = value.toLowerCase();
+                if (lowerValue.includes('schaal') || lowerValue.includes('datum') || lowerValue.includes('gezien') || lowerValue.includes('getekend')) {
+                    continue;
+                }
 
                 signatures.push({
                     type: 'signature',
