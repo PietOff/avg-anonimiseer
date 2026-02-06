@@ -121,6 +121,7 @@ const App = {
             btnBack: document.getElementById('btn-back'),
             toolSelect: document.getElementById('tool-select'),
             toolRedact: document.getElementById('tool-redact'),
+            toolQuickSelect: document.getElementById('tool-quickselect'),
             btnDetect: document.getElementById('btn-detect'),
             btnExport: document.getElementById('btn-export'),
 
@@ -227,6 +228,9 @@ const App = {
 
         this.elements.toolSelect.addEventListener('click', () => this.setTool('select'));
         this.elements.toolRedact.addEventListener('click', () => this.setTool('redact'));
+        if (this.elements.toolQuickSelect) {
+            this.elements.toolQuickSelect.addEventListener('click', () => this.setTool('quickselect'));
+        }
 
         // Detection Results - Click Delegations (Select All)
         if (this.elements.detectionResults) {
@@ -691,6 +695,77 @@ const App = {
             preview.style.pointerEvents = 'auto';
             redactionLayer.style.pointerEvents = 'auto';
             redactionLayer.appendChild(preview);
+        });
+
+        // QUICK-SELECT MODE: Click to instantly redact word under cursor
+        wrapper.addEventListener('click', async (e) => {
+            if (this.currentTool !== 'quickselect') return;
+            if (e.target.closest('.validation-toggle')) return;
+            if (e.target.closest('.redaction-box')) return; // Don't trigger on existing boxes
+
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            try {
+                // Convert click position to PDF coordinates
+                const page = await this.pdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.0 });
+                const pageHeight = viewport.height;
+
+                const pdfX = clickX / this.scale;
+                const pdfY = pageHeight - (clickY / this.scale);
+
+                // Find word at this position
+                const textContent = await page.getTextContent();
+                let foundItem = null;
+                let foundBounds = null;
+
+                for (const item of textContent.items) {
+                    if (!item.str || !item.str.trim()) continue;
+
+                    const itemX = item.transform[4];
+                    const itemY = item.transform[5];
+                    const itemWidth = item.width || (item.str.length * 5);
+                    const itemHeight = item.height || 12;
+
+                    // Check if click is within this text item
+                    if (pdfX >= itemX && pdfX <= itemX + itemWidth &&
+                        pdfY >= itemY && pdfY <= itemY + itemHeight) {
+                        foundItem = item;
+                        foundBounds = {
+                            x: itemX - 2,
+                            y: itemY - 2,
+                            width: itemWidth + 4,
+                            height: itemHeight + 4
+                        };
+                        break;
+                    }
+                }
+
+                if (foundItem && foundBounds) {
+                    // Don't redact if already covered
+                    if (!this.isAreaRedacted(pageNum, foundBounds)) {
+                        const newRedaction = Redactor.addRedaction(pageNum, foundBounds, 'manual', foundItem.str.trim());
+
+                        if (newRedaction) {
+                            this.showToast(`"${foundItem.str.trim()}" zwartgelakt`);
+
+                            // Auto-apply globally if significant word (>4 chars)
+                            if (foundItem.str.trim().length > 4) {
+                                this.applyRedactionGlobally(foundItem.str.trim());
+                            }
+
+                            this.renderAllRedactions();
+                            this.updateRedactionsList();
+                        }
+                    }
+                } else {
+                    this.showToast('Geen woord gevonden op deze positie');
+                }
+            } catch (err) {
+                console.warn('Quick-select failed:', err);
+            }
         });
 
         // Debounce timer for text preview
@@ -1165,23 +1240,50 @@ const App = {
                 box.style.width = canvasBounds.width + 'px';
                 box.style.height = canvasBounds.height + 'px';
 
-                // VISUAL SIGNAL WORDS (Yellow Highlight)
+                // VISUAL SIGNAL WORDS - Color coded by confidence
                 if (redaction.type === 'indicator') {
-                    box.style.backgroundColor = 'rgba(255, 215, 0, 0.3)'; // Transparent Yellow
-                    box.style.border = '2px dashed #fbc02d'; // Orange-Yellow border
-                    box.title = 'Signaalwoord: Klik om zwart te lakken';
+                    // Confidence-based color coding:
+                    // - high: green (highly likely to be PII)
+                    // - medium: gold/yellow (probable PII)
+                    // - low: orange (possible, needs review)
+                    // - learned: blue (user-taught pattern)
+                    const confidence = redaction.confidence || 'medium';
+
+                    let bgColor, borderColor, confidenceLabel;
+                    switch (confidence) {
+                        case 'high':
+                            bgColor = 'rgba(34, 197, 94, 0.3)';  // Green
+                            borderColor = '#22c55e';
+                            confidenceLabel = '✓ Hoog';
+                            break;
+                        case 'learned':
+                            bgColor = 'rgba(59, 130, 246, 0.3)'; // Blue
+                            borderColor = '#3b82f6';
+                            confidenceLabel = '📚 Geleerd';
+                            break;
+                        case 'low':
+                            bgColor = 'rgba(249, 115, 22, 0.3)'; // Orange
+                            borderColor = '#f97316';
+                            confidenceLabel = '? Laag';
+                            break;
+                        default: // medium
+                            bgColor = 'rgba(255, 215, 0, 0.3)';  // Gold
+                            borderColor = '#fbc02d';
+                            confidenceLabel = '○ Medium';
+                    }
+
+                    box.style.backgroundColor = bgColor;
+                    box.style.border = `2px dashed ${borderColor}`;
+                    box.title = `${confidenceLabel} zekerheid: "${redaction.value}" - Klik om zwart te lakken`;
+                    box.dataset.confidence = confidence;
 
                     // Click to convert to real redaction
                     box.addEventListener('click', async (e) => {
-                        e.stopPropagation(); // Prevent other clicks
-
-                        // Ignore if we just dragged the box
+                        e.stopPropagation();
                         if (this.isDragging) return;
 
                         if (confirm(`Wil je "${redaction.value}" zwart lakken?`)) {
-                            // Convert to manual redaction
                             redaction.type = 'manual';
-                            // Call update to refresh UI
                             await this.renderAllRedactions();
                             this.updateRedactionsList();
                         }
@@ -1745,10 +1847,19 @@ const App = {
         this.currentTool = tool;
         this.elements.toolSelect.classList.toggle('active', tool === 'select');
         this.elements.toolRedact.classList.toggle('active', tool === 'redact');
+        if (this.elements.toolQuickSelect) {
+            this.elements.toolQuickSelect.classList.toggle('active', tool === 'quickselect');
+        }
 
         // Update cursor on all page wrappers
         document.querySelectorAll('.pdf-page-wrapper').forEach(wrapper => {
-            wrapper.style.cursor = tool === 'redact' ? 'crosshair' : 'default';
+            if (tool === 'redact') {
+                wrapper.style.cursor = 'crosshair';
+            } else if (tool === 'quickselect') {
+                wrapper.style.cursor = 'text';
+            } else {
+                wrapper.style.cursor = 'default';
+            }
         });
     },
 
@@ -2038,8 +2149,8 @@ const App = {
                         const bounds = await this.findTextBoundsOnPage(i, item.value);
                         if (bounds) {
                             if (!this.isAreaRedacted(i, bounds)) {
-                                // Add as indicator (yellow box)
-                                Redactor.addRedaction(i, bounds, 'indicator', item.value);
+                                // Add as indicator with confidence level
+                                Redactor.addRedaction(i, bounds, 'indicator', item.value, item.confidence || 'medium');
                                 totalFound++;
                             }
                         }

@@ -35,8 +35,9 @@ const Redactor = {
      * @param {Object} bounds - {x, y, width, height} in PDF coordinates
      * @param {string} type - Type of data being redacted
      * @param {string} value - Original value (for reference only)
+     * @param {string} confidence - Detection confidence level ('high', 'medium', 'low', 'learned')
      */
-    addRedaction(pageNumber, bounds, type = 'manual', value = '') {
+    addRedaction(pageNumber, bounds, type = 'manual', value = '', confidence = 'medium') {
         if (!this.redactions.has(pageNumber)) {
             this.redactions.set(pageNumber, []);
         }
@@ -81,6 +82,7 @@ const Redactor = {
             bounds,
             type,
             value,
+            confidence,
             createdAt: new Date().toISOString()
         };
 
