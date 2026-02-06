@@ -783,74 +783,117 @@ const App = {
 
     /**
      * Helper: Extract text from specific PDF bounds
+     * IMPROVED: Uses overlap percentage to find the BEST matching text,
+     * not just any text that touches the selection area.
      */
     async extractTextFromBounds(pageNum, pdfBounds) {
         try {
             const page = await this.pdfDoc.getPage(pageNum);
             const textContent = await page.getTextContent();
 
-            // Note: matching is approximate
-            const matchedText = [];
+            // Store matches with their overlap scores
+            const matches = [];
+
             for (const item of textContent.items) {
+                if (!item.str || !item.str.trim()) continue;
+
                 const itemX = item.transform[4];
                 const itemY = item.transform[5];
                 const itemHeight = item.height || 10;
-                const itemWidth = item.width || (item.str.length * 5); // Estimate if missing
+                const itemWidth = item.width || (item.str.length * 5);
 
-                // Check overlap
-                // PDF coords: Y starts at bottom. 
-                // Simple box intersection
-                // Check overlap with tolerance
-                // Increased tolerance to 5 to catch small text/footnotes that might be slightly offset
-                const tolerance = 5;
+                // Calculate intersection area
+                const xOverlapStart = Math.max(itemX, pdfBounds.x);
+                const xOverlapEnd = Math.min(itemX + itemWidth, pdfBounds.x + pdfBounds.width);
+                const yOverlapStart = Math.max(itemY, pdfBounds.y);
+                const yOverlapEnd = Math.min(itemY + itemHeight, pdfBounds.y + pdfBounds.height);
 
-                const xOverlap = (itemX + itemWidth + tolerance >= pdfBounds.x) &&
-                    (itemX - tolerance <= pdfBounds.x + pdfBounds.width);
+                const xOverlap = Math.max(0, xOverlapEnd - xOverlapStart);
+                const yOverlap = Math.max(0, yOverlapEnd - yOverlapStart);
+                const overlapArea = xOverlap * yOverlap;
 
-                const yOverlap = (itemY + itemHeight + tolerance >= pdfBounds.y) &&
-                    (itemY - tolerance <= pdfBounds.y + pdfBounds.height);
+                if (overlapArea > 0) {
+                    const itemArea = itemWidth * itemHeight;
+                    const overlapPercent = (overlapArea / itemArea) * 100;
 
-                if (xOverlap && yOverlap) {
-                    matchedText.push(item.str.trim());
-                }
-            }
-
-            // FALLBACK: If strict overlap found nothing, find the CLOSEST item
-            // This handles cases where the text layer is slightly offset or the user missed slightly
-            if (matchedText.length === 0) {
-                console.log("Strict overlap failed, trying nearest neighbor...");
-
-                const boxCenterX = pdfBounds.x + (pdfBounds.width / 2);
-                const boxCenterY = pdfBounds.y + (pdfBounds.height / 2);
-
-                let closestItem = null;
-                let minDistance = Infinity;
-                const MAX_DISTANCE = 25; // Search radius (approx 1-2 lines)
-
-                for (const item of textContent.items) {
-                    // Calculate item center
-                    const itemWidth = item.width || (item.str.length * 4);
-                    const itemHeight = item.height || 10;
-                    const itemCenterX = item.transform[4] + (itemWidth / 2);
-                    const itemCenterY = item.transform[5] + (itemHeight / 2);
-
-                    const dx = boxCenterX - itemCenterX;
-                    const dy = boxCenterY - itemCenterY;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-
-                    if (dist < minDistance && dist < MAX_DISTANCE) {
-                        minDistance = dist;
-                        closestItem = item;
+                    // Only consider items with >30% overlap (configurable threshold)
+                    if (overlapPercent > 30) {
+                        matches.push({
+                            text: item.str.trim(),
+                            overlapPercent: overlapPercent,
+                            area: itemArea,
+                            x: itemX,
+                            y: itemY
+                        });
                     }
                 }
+            }
 
-                if (closestItem) {
-                    console.log(`Found nearest item: "${closestItem.str}" (dist: ${minDistance.toFixed(2)})`);
-                    return closestItem.str.trim();
+            // Sort by overlap percentage (highest first)
+            matches.sort((a, b) => b.overlapPercent - a.overlapPercent);
+
+            // If we found good matches
+            if (matches.length > 0) {
+                // SMART SELECTION:
+                // If the top match has >70% overlap, it's likely the target - return just that
+                // Otherwise, combine adjacent items that are on the same line (similar Y)
+
+                const bestMatch = matches[0];
+
+                if (bestMatch.overlapPercent > 70 && matches.length === 1) {
+                    // Single clear match
+                    return bestMatch.text;
+                }
+
+                // Multiple matches - filter to only those on similar Y (same line)
+                // and with >50% overlap
+                const lineMatches = matches.filter(m =>
+                    m.overlapPercent > 50 &&
+                    Math.abs(m.y - bestMatch.y) < 15  // Same line (within 15 PDF units)
+                );
+
+                // Sort by X position to get reading order
+                lineMatches.sort((a, b) => a.x - b.x);
+
+                // Join texts, remove duplicates
+                const uniqueTexts = [...new Set(lineMatches.map(m => m.text))];
+                return uniqueTexts.join(' ').trim();
+            }
+
+            // FALLBACK: If no overlap matches, find the CLOSEST single item
+            console.log("No overlap matches, trying nearest neighbor...");
+
+            const boxCenterX = pdfBounds.x + (pdfBounds.width / 2);
+            const boxCenterY = pdfBounds.y + (pdfBounds.height / 2);
+
+            let closestItem = null;
+            let minDistance = Infinity;
+            const MAX_DISTANCE = 20;
+
+            for (const item of textContent.items) {
+                if (!item.str || !item.str.trim()) continue;
+
+                const itemWidth = item.width || (item.str.length * 4);
+                const itemHeight = item.height || 10;
+                const itemCenterX = item.transform[4] + (itemWidth / 2);
+                const itemCenterY = item.transform[5] + (itemHeight / 2);
+
+                const dx = boxCenterX - itemCenterX;
+                const dy = boxCenterY - itemCenterY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < minDistance && dist < MAX_DISTANCE) {
+                    minDistance = dist;
+                    closestItem = item;
                 }
             }
 
-            return matchedText.join(' ').trim();
+            if (closestItem) {
+                console.log(`Found nearest item: "${closestItem.str}" (dist: ${minDistance.toFixed(2)})`);
+                return closestItem.str.trim();
+            }
+
+            return "";
         } catch (e) {
             console.error("Text extraction failed", e);
             return "";
