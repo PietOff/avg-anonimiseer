@@ -1151,10 +1151,9 @@ const App = {
             for (const item of textContent.items) {
                 if (!item.str || !item.str.trim()) continue;
 
-                const itemWidth = item.width || (item.str.length * 4);
-                const itemHeight = item.height || 10;
-                const itemCenterX = item.transform[4] + (itemWidth / 2);
-                const itemCenterY = item.transform[5] + (itemHeight / 2);
+                const dims = this.getTextItemDimensions(item);
+                const itemCenterX = dims.x + (dims.width / 2);
+                const itemCenterY = dims.y + (dims.height / 2);
 
                 const dx = boxCenterX - itemCenterX;
                 const dy = boxCenterY - itemCenterY;
@@ -2201,12 +2200,13 @@ const App = {
                 let normalizedCombined = combined.toLowerCase().replace(/\s+/g, '');
 
                 if (normalizedCombined.includes(cleanSearch)) {
-                    // Found in single item
+                    // Found in single item - use helper for consistent dimensions
+                    const dims = this.getTextItemDimensions(startItem);
                     return {
-                        x: startItem.transform[4],
-                        y: startItem.transform[5],
-                        width: startItem.width || (startItem.str.length * 5),
-                        height: startItem.height || 12
+                        x: dims.x,
+                        y: dims.y,
+                        width: dims.width,
+                        height: dims.height
                     };
                 }
 
@@ -2221,17 +2221,14 @@ const App = {
                     itemsInSequence.push(nextItem);
 
                     if (normalizedCombined.includes(cleanSearch)) {
-                        // Found in sequence - calculate union bounds
+                        // Found in sequence - calculate union bounds using helper
                         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
                         itemsInSequence.forEach(seqItem => {
-                            const bx = seqItem.transform[4];
-                            const by = seqItem.transform[5];
-                            const bh = seqItem.height || 12;
-                            const bw = seqItem.width || (seqItem.str.length * 5);
-                            minX = Math.min(minX, bx);
-                            minY = Math.min(minY, by);
-                            maxX = Math.max(maxX, bx + bw);
-                            maxY = Math.max(maxY, by + bh);
+                            const dims = this.getTextItemDimensions(seqItem);
+                            minX = Math.min(minX, dims.x);
+                            minY = Math.min(minY, dims.y);
+                            maxX = Math.max(maxX, dims.x + dims.width);
+                            maxY = Math.max(maxY, dims.y + dims.height);
                         });
 
                         return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
@@ -2450,14 +2447,17 @@ const App = {
             const textContent = await page.getTextContent();
             const viewport = page.getViewport({ scale: 1 });
 
-            const textItems = textContent.items.map(item => ({
-                str: item.str,
-                x: item.transform[4],
-                y: item.transform[5],
-                width: item.width,
-                height: item.height || Math.abs(item.transform[0]) || 12,
-                fontHeight: Math.abs(item.transform[0]) || 12
-            }));
+            const textItems = textContent.items.map(item => {
+                const dims = this.getTextItemDimensions(item);
+                return {
+                    str: item.str,
+                    x: dims.x,
+                    y: dims.y,
+                    width: dims.width,
+                    height: dims.height,
+                    fontHeight: dims.height
+                };
+            });
             this.textItemsPerPage.set(i, textItems);
 
             let combinedText = '';
