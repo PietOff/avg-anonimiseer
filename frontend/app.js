@@ -736,12 +736,16 @@ const App = {
 
                     const pdfBounds = Redactor.canvasToPdfCoords(bounds, pageHeight, this.scale);
 
-                    // Add redaction immediately
-                    const newRedaction = Redactor.addRedaction(pageNum, pdfBounds, 'manual');
+                    // WORD SNAPPING: Expand bounds to include complete words
+                    const snappedBounds = await this.snapBoundsToWords(pageNum, pdfBounds);
+                    const finalBounds = snappedBounds || pdfBounds;
+
+                    // Add redaction with snapped bounds
+                    const newRedaction = Redactor.addRedaction(pageNum, finalBounds, 'manual');
 
                     // FEEDBACK LOOP: Try to extract text from the selected area
                     try {
-                        const foundText = await this.extractTextFromBounds(pageNum, pdfBounds);
+                        const foundText = await this.extractTextFromBounds(pageNum, finalBounds);
                         if (foundText) {
                             console.log("Manual redaction captured text:", foundText);
                             newRedaction.value = foundText;
@@ -779,6 +783,93 @@ const App = {
                 }
             }
         });
+    },
+
+    /**
+     * WORD SNAPPING: Expand selection bounds to include complete words
+     * This makes manual redaction more intuitive - selections "snap" to whole words
+     * @param {number} pageNum - Page number
+     * @param {Object} pdfBounds - Original selection bounds {x, y, width, height}
+     * @returns {Object|null} Expanded bounds or null if no words found
+     */
+    async snapBoundsToWords(pageNum, pdfBounds) {
+        try {
+            const page = await this.pdfDoc.getPage(pageNum);
+            const textContent = await page.getTextContent();
+
+            // Find all text items that overlap with selection
+            const overlappingItems = [];
+
+            for (const item of textContent.items) {
+                if (!item.str || !item.str.trim()) continue;
+
+                const itemX = item.transform[4];
+                const itemY = item.transform[5];
+                const itemWidth = item.width || (item.str.length * 5);
+                const itemHeight = item.height || 10;
+
+                // Check if this item overlaps with selection
+                const itemRight = itemX + itemWidth;
+                const itemTop = itemY + itemHeight;
+                const selRight = pdfBounds.x + pdfBounds.width;
+                const selTop = pdfBounds.y + pdfBounds.height;
+
+                // Calculate overlap
+                const xOverlap = Math.max(0, Math.min(itemRight, selRight) - Math.max(itemX, pdfBounds.x));
+                const yOverlap = Math.max(0, Math.min(itemTop, selTop) - Math.max(itemY, pdfBounds.y));
+
+                if (xOverlap > 0 && yOverlap > 0) {
+                    // Calculate overlap percentage of the text item
+                    const itemArea = itemWidth * itemHeight;
+                    const overlapArea = xOverlap * yOverlap;
+                    const overlapPercent = (overlapArea / itemArea) * 100;
+
+                    // Include if at least 20% overlap (generous for word snapping)
+                    if (overlapPercent >= 20) {
+                        overlappingItems.push({
+                            x: itemX,
+                            y: itemY,
+                            width: itemWidth,
+                            height: itemHeight,
+                            text: item.str,
+                            overlapPercent
+                        });
+                    }
+                }
+            }
+
+            if (overlappingItems.length === 0) {
+                return null; // No words found, use original bounds
+            }
+
+            // Calculate bounding box that encompasses all overlapping words
+            let minX = Infinity, minY = Infinity;
+            let maxX = -Infinity, maxY = -Infinity;
+
+            for (const item of overlappingItems) {
+                minX = Math.min(minX, item.x);
+                minY = Math.min(minY, item.y);
+                maxX = Math.max(maxX, item.x + item.width);
+                maxY = Math.max(maxY, item.y + item.height);
+            }
+
+            // Add small padding (2 PDF units)
+            const padding = 2;
+            const snappedBounds = {
+                x: minX - padding,
+                y: minY - padding,
+                width: (maxX - minX) + (padding * 2),
+                height: (maxY - minY) + (padding * 2)
+            };
+
+            console.log(`Word snapping: ${overlappingItems.length} words, bounds expanded from ${pdfBounds.width.toFixed(0)}x${pdfBounds.height.toFixed(0)} to ${snappedBounds.width.toFixed(0)}x${snappedBounds.height.toFixed(0)}`);
+
+            return snappedBounds;
+
+        } catch (err) {
+            console.warn('Word snapping failed:', err);
+            return null;
+        }
     },
 
     /**
