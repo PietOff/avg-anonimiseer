@@ -37,7 +37,25 @@ const App = {
     pageContainers: [],
     pageDimensions: [], // Store dimensions per page
 
+    /**
+     * Helper: Get text item dimensions from PDF.js text content item
+     * PDF.js doesn't always provide height/width directly, so we calculate from transform
+     * @param {Object} item - PDF.js text content item
+     * @returns {Object} {x, y, width, height}
+     */
+    getTextItemDimensions(item) {
+        // Transform matrix: [scaleX, skewY, skewX, scaleY, translateX, translateY]
+        const scaleY = Math.abs(item.transform[3]) || Math.abs(item.transform[0]);
+        const height = item.height || scaleY || 12;
+        const width = item.width || (item.str.length * (scaleY * 0.5)) || (item.str.length * 6);
 
+        return {
+            x: item.transform[4],
+            y: item.transform[5],
+            width: width,
+            height: height
+        };
+    },
 
     // learnedWords/ignoredWords are now managed by Detector module
 
@@ -724,20 +742,17 @@ const App = {
                 for (const item of textContent.items) {
                     if (!item.str || !item.str.trim()) continue;
 
-                    const itemX = item.transform[4];
-                    const itemY = item.transform[5];
-                    const itemWidth = item.width || (item.str.length * 5);
-                    const itemHeight = item.height || 12;
+                    const dims = this.getTextItemDimensions(item);
 
                     // Check if click is within this text item
-                    if (pdfX >= itemX && pdfX <= itemX + itemWidth &&
-                        pdfY >= itemY && pdfY <= itemY + itemHeight) {
+                    if (pdfX >= dims.x && pdfX <= dims.x + dims.width &&
+                        pdfY >= dims.y && pdfY <= dims.y + dims.height) {
                         foundItem = item;
                         foundBounds = {
-                            x: itemX - 2,
-                            y: itemY - 2,
-                            width: itemWidth + 4,
-                            height: itemHeight + 4
+                            x: dims.x - 2,
+                            y: dims.y - 2,
+                            width: dims.width + 4,
+                            height: dims.height + 4
                         };
                         break;
                     }
@@ -926,27 +941,24 @@ const App = {
             for (const item of textContent.items) {
                 if (!item.str || !item.str.trim()) continue;
 
-                const itemX = item.transform[4];
-                const itemY = item.transform[5];
-                const itemWidth = item.width || (item.str.length * 5);
-                const itemHeight = item.height || 10;
+                const dims = this.getTextItemDimensions(item);
 
                 // Quick overlap check
-                const itemRight = itemX + itemWidth;
-                const itemTop = itemY + itemHeight;
+                const itemRight = dims.x + dims.width;
+                const itemTop = dims.y + dims.height;
                 const selRight = pdfBounds.x + pdfBounds.width;
                 const selTop = pdfBounds.y + pdfBounds.height;
 
-                const xOverlap = Math.max(0, Math.min(itemRight, selRight) - Math.max(itemX, pdfBounds.x));
-                const yOverlap = Math.max(0, Math.min(itemTop, selTop) - Math.max(itemY, pdfBounds.y));
+                const xOverlap = Math.max(0, Math.min(itemRight, selRight) - Math.max(dims.x, pdfBounds.x));
+                const yOverlap = Math.max(0, Math.min(itemTop, selTop) - Math.max(dims.y, pdfBounds.y));
 
                 if (xOverlap > 0 && yOverlap > 0) {
-                    const itemArea = itemWidth * itemHeight;
+                    const itemArea = dims.width * dims.height;
                     const overlapArea = xOverlap * yOverlap;
                     const overlapPercent = (overlapArea / itemArea) * 100;
 
                     if (overlapPercent >= 20) {
-                        texts.push({ text: item.str.trim(), x: itemX, y: itemY });
+                        texts.push({ text: item.str.trim(), x: dims.x, y: dims.y });
                     }
                 }
             }
@@ -984,34 +996,31 @@ const App = {
             for (const item of textContent.items) {
                 if (!item.str || !item.str.trim()) continue;
 
-                const itemX = item.transform[4];
-                const itemY = item.transform[5];
-                const itemWidth = item.width || (item.str.length * 5);
-                const itemHeight = item.height || 10;
+                const dims = this.getTextItemDimensions(item);
 
                 // Check if this item overlaps with selection
-                const itemRight = itemX + itemWidth;
-                const itemTop = itemY + itemHeight;
+                const itemRight = dims.x + dims.width;
+                const itemTop = dims.y + dims.height;
                 const selRight = pdfBounds.x + pdfBounds.width;
                 const selTop = pdfBounds.y + pdfBounds.height;
 
                 // Calculate overlap
-                const xOverlap = Math.max(0, Math.min(itemRight, selRight) - Math.max(itemX, pdfBounds.x));
-                const yOverlap = Math.max(0, Math.min(itemTop, selTop) - Math.max(itemY, pdfBounds.y));
+                const xOverlap = Math.max(0, Math.min(itemRight, selRight) - Math.max(dims.x, pdfBounds.x));
+                const yOverlap = Math.max(0, Math.min(itemTop, selTop) - Math.max(dims.y, pdfBounds.y));
 
                 if (xOverlap > 0 && yOverlap > 0) {
                     // Calculate overlap percentage of the text item
-                    const itemArea = itemWidth * itemHeight;
+                    const itemArea = dims.width * dims.height;
                     const overlapArea = xOverlap * yOverlap;
                     const overlapPercent = (overlapArea / itemArea) * 100;
 
                     // Include if at least 20% overlap (generous for word snapping)
                     if (overlapPercent >= 20) {
                         overlappingItems.push({
-                            x: itemX,
-                            y: itemY,
-                            width: itemWidth,
-                            height: itemHeight,
+                            x: dims.x,
+                            y: dims.y,
+                            width: dims.width,
+                            height: dims.height,
                             text: item.str,
                             overlapPercent
                         });
@@ -1069,23 +1078,20 @@ const App = {
             for (const item of textContent.items) {
                 if (!item.str || !item.str.trim()) continue;
 
-                const itemX = item.transform[4];
-                const itemY = item.transform[5];
-                const itemHeight = item.height || 10;
-                const itemWidth = item.width || (item.str.length * 5);
+                const dims = this.getTextItemDimensions(item);
 
                 // Calculate intersection area
-                const xOverlapStart = Math.max(itemX, pdfBounds.x);
-                const xOverlapEnd = Math.min(itemX + itemWidth, pdfBounds.x + pdfBounds.width);
-                const yOverlapStart = Math.max(itemY, pdfBounds.y);
-                const yOverlapEnd = Math.min(itemY + itemHeight, pdfBounds.y + pdfBounds.height);
+                const xOverlapStart = Math.max(dims.x, pdfBounds.x);
+                const xOverlapEnd = Math.min(dims.x + dims.width, pdfBounds.x + pdfBounds.width);
+                const yOverlapStart = Math.max(dims.y, pdfBounds.y);
+                const yOverlapEnd = Math.min(dims.y + dims.height, pdfBounds.y + pdfBounds.height);
 
                 const xOverlap = Math.max(0, xOverlapEnd - xOverlapStart);
                 const yOverlap = Math.max(0, yOverlapEnd - yOverlapStart);
                 const overlapArea = xOverlap * yOverlap;
 
                 if (overlapArea > 0) {
-                    const itemArea = itemWidth * itemHeight;
+                    const itemArea = dims.width * dims.height;
                     const overlapPercent = (overlapArea / itemArea) * 100;
 
                     // Only consider items with >30% overlap (configurable threshold)
@@ -1094,8 +1100,8 @@ const App = {
                             text: item.str.trim(),
                             overlapPercent: overlapPercent,
                             area: itemArea,
-                            x: itemX,
-                            y: itemY
+                            x: dims.x,
+                            y: dims.y
                         });
                     }
                 }
