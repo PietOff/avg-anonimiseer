@@ -385,35 +385,59 @@ const Detector = {
     },
 
     /**
+     * Helper: Check if a word matches using whole-word boundary matching
+     * Prevents 'ja' from matching 'Jan' or 'Jansen'
+     * @param {string} text - Text to search in (lowercase)
+     * @param {string} word - Word to find (lowercase)
+     * @returns {boolean} True if whole word is found
+     */
+    matchesWholeWord(text, word) {
+        // Escape regex special characters in the word
+        const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Use word boundaries for matching
+        const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+        return regex.test(text);
+    },
+
+    /**
      * Check if a name should be excluded based on global rules
+     * IMPROVED: Uses whole-word matching to prevent false positives
      */
     shouldExclude(name, matchIndex, fullText) {
         const lower = name.toLowerCase();
+        const words = lower.split(/\s+/);
 
-        // Check certified parties
+        // Check certified parties (these can use partial matching for company names)
         for (const party of this.certifiedParties) {
             if (lower.includes(party) || party.includes(lower)) return true;
         }
 
-        // Check static exclusion lists
-        for (const title of [...this.publicOfficials, ...this.governmentBodies, ...this.jobTitles, ...this.excludeWords]) {
-            if (lower.includes(title) || title.includes(lower)) return true;
+        // Check static exclusion lists WITH WHOLE-WORD MATCHING
+        // Split name into words and check each word individually
+        const allExclusions = [...this.publicOfficials, ...this.governmentBodies, ...this.jobTitles, ...this.excludeWords];
+
+        for (const exclusion of allExclusions) {
+            // Check if any word in the name EXACTLY matches the exclusion
+            // This prevents 'ja' from matching 'Jan' or 'Jansen'
+            if (words.some(word => word === exclusion)) {
+                return true;
+            }
+            // Also check if the entire name IS the exclusion
+            if (lower === exclusion) {
+                return true;
+            }
         }
 
         // Exclude single words that are short (unlikely to be a full name without context)
-        // UNLESS... context says otherwise (e.g. "Naam: Piet")
-        // But here we return TRUE to EXCLUDE.
         if (!name.includes(' ') && name.length < 15) {
-            // If it's a single word, rarely a full name to redact unless it's a labeled field match.
-            // This method is used by 'detectNames' / signatures.
             return true;
         }
 
         // Context-aware check
         if (matchIndex > 0) {
             const beforeText = fullText.substring(Math.max(0, matchIndex - 50), matchIndex).toLowerCase();
-            const words = beforeText.trim().split(/\s+/);
-            const precedingWord = words[words.length - 1] || '';
+            const beforeWords = beforeText.trim().split(/\s+/);
+            const precedingWord = beforeWords[beforeWords.length - 1] || '';
 
             for (const [category, contextWords] of Object.entries(this.contextExclusions)) {
                 for (const cw of contextWords) {
@@ -422,9 +446,7 @@ const Detector = {
             }
 
             // Check for numeric prefix (Section headers like '7.3 Name')
-            // Look at 10 chars before match
             const immediatePrefix = fullText.substring(Math.max(0, matchIndex - 10), matchIndex).trim();
-            // Matches "7.3", "1.", "2.4.1", etc. appearing right before the name
             if (/^\d+(\.\d+)*\.?$/.test(immediatePrefix)) {
                 return true;
             }
@@ -798,8 +820,8 @@ const Detector = {
         const seen = new Set();
 
         // Strategy 1: Find names after known prefixes (high confidence)
-        // FIXED regex: Requires space between first and last name
-        // Pattern: prefix + optional colon/dot + space + FirstName + [tussenvoegsel] + LastName
+        // Pattern: prefix + space + FirstName + [tussenvoegsel] + LastName
+        // Note: 'gi' flag = prefix case-insensitive, but [A-Z] enforces name capitals
         for (const prefix of this.namePatterns.prefixes) {
             const escapedPrefix = prefix.replace('.', '\\.');
             const regex = new RegExp(
