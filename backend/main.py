@@ -7,14 +7,13 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-# Configure CORS
+# Configure CORS (Production-ready: no wildcards)
 origins = [
     "http://localhost:3000",
     "http://localhost:5000",
-    "http://127.0.0.1:5500",  # Common VS Code Live Server
+    "http://127.0.0.1:5500",  # VS Code Live Server
     "https://avg-anonimiseer.vercel.app",
     "https://avg-anonimiseer-eight.vercel.app",  # Current production URL
-    "*"  # Allow all for now during dev, tighten later
 ]
 
 app.add_middleware(
