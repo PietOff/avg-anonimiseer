@@ -798,10 +798,16 @@ const Detector = {
         const seen = new Set();
 
         // Strategy 1: Find names after known prefixes (high confidence)
-        // Updated regex: Allows optional dot, AND optional colon (e.g. "Boormeester: Jan" or "De heer Jan")
+        // FIXED regex: Requires space between first and last name
+        // Pattern: prefix + optional colon/dot + space + FirstName + [tussenvoegsel] + LastName
         for (const prefix of this.namePatterns.prefixes) {
+            const escapedPrefix = prefix.replace('.', '\\.');
             const regex = new RegExp(
-                prefix.replace('.', '\\.') + '\\s*(?:[:.]|\\s)\\s*([A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+(?:\\s+(?:van|de|der|den|het|ten|ter|te)\\s+)?[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+)',
+                escapedPrefix +
+                '\\s*(?:[:.])?\\s+' +  // Optional colon/dot, then require space
+                '([A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+' +  // First name
+                '(?:\\s+(?:van|de|der|den|het|ten|ter|te))?\\s+' +  // Optional tussenvoegsel + required space
+                '[A-Z][a-zàáâãäåæçèéêëìíîïñòóôõöùúûüý]+)',  // Last name
                 'gi'
             );
 
