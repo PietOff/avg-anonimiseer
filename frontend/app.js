@@ -1282,16 +1282,31 @@ const App = {
                     box.title = `${confidenceLabel} zekerheid: "${redaction.value}" - Klik om zwart te lakken`;
                     box.dataset.confidence = confidence;
 
-                    // Click to convert to real redaction
-                    box.addEventListener('click', async (e) => {
+                    // Click to convert to real redaction (no confirmation for speed)
+                    box.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        if (this.isDragging) return;
+                        e.preventDefault();
 
-                        if (confirm(`Wil je "${redaction.value}" zwart lakken?`)) {
-                            redaction.type = 'manual';
-                            await this.renderAllRedactions();
-                            this.updateRedactionsList();
+                        // Skip if we were dragging
+                        if (this.isDragging) {
+                            console.log('Skipping click - was dragging');
+                            return;
                         }
+
+                        console.log('Converting indicator to redaction:', redaction.value);
+
+                        // Convert to manual redaction
+                        redaction.type = 'manual';
+
+                        // Save state in Redactor for undo/redo
+                        Redactor.saveState();
+
+                        // Show feedback
+                        this.showToast(`"${redaction.value}" zwartgelakt`);
+
+                        // Re-render to show the black box
+                        this.renderAllRedactions();
+                        this.updateRedactionsList();
                     });
                 }
 
