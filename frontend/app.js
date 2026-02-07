@@ -97,39 +97,45 @@ const App = {
             const savedFile = await Persistence.loadFile();
             if (savedFile) {
                 const metadata = await Persistence.loadMetadata();
+                const fileName = metadata?.name || 'Vorig document';
                 console.log('Found saved session...', metadata);
 
-                // Auto-restore without blocking confirm - show toast instead
-                this.showToast('Vorig document wordt hersteld...');
+                // Ask user if they want to continue
+                if (confirm(`Er is een eerder document gevonden: "${fileName}"\n\nWil je verdergaan waar je gebleven was?`)) {
+                    this.showToast('Document wordt hersteld...');
 
-                try {
-                    // Create a File object from the saved blob
-                    const fileName = metadata?.name || 'Hersteld document.pdf';
-                    const file = new File([savedFile], fileName, { type: 'application/pdf' });
+                    try {
+                        // Create a File object from the saved blob
+                        const file = new File([savedFile], fileName, { type: 'application/pdf' });
 
-                    // Load the file using existing method
-                    await this.loadFile(file);
+                        // Load the file using existing method
+                        await this.loadFile(file);
 
-                    // Wait a moment for PDF to render, then restore redactions
-                    setTimeout(async () => {
-                        const savedState = await Persistence.loadState();
-                        if (savedState) {
-                            try {
-                                Redactor.redactions = new Map(JSON.parse(savedState));
-                                Redactor.saveState();
-                                this.renderAllRedactions();
-                                this.updateRedactionsList();
-                                this.showToast(`Sessie hersteld ✅ (${Redactor.redactions.size} redacties)`);
-                            } catch (stateError) {
-                                console.error('Error restoring redaction state:', stateError);
+                        // Wait a moment for PDF to render, then restore redactions
+                        setTimeout(async () => {
+                            const savedState = await Persistence.loadState();
+                            if (savedState) {
+                                try {
+                                    Redactor.redactions = new Map(JSON.parse(savedState));
+                                    Redactor.saveState();
+                                    this.renderAllRedactions();
+                                    this.updateRedactionsList();
+                                    this.showToast(`Sessie hersteld ✅ (${Redactor.redactions.size} redacties)`);
+                                } catch (stateError) {
+                                    console.error('Error restoring redaction state:', stateError);
+                                }
                             }
-                        }
-                    }, 1000);
+                        }, 1000);
 
-                } catch (loadError) {
-                    console.error('Error loading saved file:', loadError);
-                    this.showToast('Kan vorig document niet herstellen', 'error');
+                    } catch (loadError) {
+                        console.error('Error loading saved file:', loadError);
+                        this.showToast('Kan document niet herstellen', 'error');
+                        await Persistence.clearSession();
+                    }
+                } else {
+                    // User chose not to restore - clear the session
                     await Persistence.clearSession();
+                    console.log('User declined session restore, cleared.');
                 }
             }
         } catch (e) {
