@@ -482,10 +482,23 @@ const App = {
         // Update validation progress bar
         this.updateValidationProgress();
 
-        // 1. First, create ALL wrappers in correct order (Synchronous)
-        // This ensures Page 1 is always before Page 2, regardless of render speed.
-        const renderTasks = [];
+        // 3. Virtualization: Use IntersectionObserver to render pages only when visible
+        const observerOptions = {
+            root: this.elements.pdfViewer, // Use the scroll container
+            rootMargin: '100% 0px 100% 0px', // Render 1 screen ahead/behind
+            threshold: 0
+        };
 
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const pageNum = parseInt(entry.target.dataset.page);
+                    this.renderPage(pageNum, entry.target);
+                }
+            });
+        }, observerOptions);
+
+        // Render placeholders first (lightweight)
         for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
             // Create page wrapper
             const pageWrapper = document.createElement('div');
@@ -495,6 +508,8 @@ const App = {
             pageWrapper.style.position = 'relative';
             pageWrapper.style.marginBottom = '20px';
             pageWrapper.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+            // Initial min-height based on A4 ratio (approx) until loaded
+            pageWrapper.style.minHeight = '800px';
 
             // --- VALIDATION HEADER START ---
             const validationHeader = document.createElement('div');
@@ -512,12 +527,12 @@ const App = {
                 </label>
             `;
             pageWrapper.appendChild(validationHeader);
-            // --- VALIDATION HEADER END ---
 
-            // Canvas Wrapper
+            // Canvas Wrapper - Placeholder
             const canvasWrapper = document.createElement('div');
             canvasWrapper.className = 'canvas-wrapper';
             canvasWrapper.style.position = 'relative';
+            canvasWrapper.style.minHeight = '100px'; // Ensure visibility
             if (isChecked) canvasWrapper.classList.add('page-validated');
             pageWrapper.appendChild(canvasWrapper);
 
@@ -531,63 +546,87 @@ const App = {
                 this.togglePageValidation(pageNum, e.target.checked);
             });
 
-            // 2. Prepare Async Render Task
-            renderTasks.push(async () => {
-                const page = await this.pdfDoc.getPage(pageNum);
-                const viewport = page.getViewport({ scale: this.scale });
-
-                // Store unscaled dimensions
-                const unscaledViewport = page.getViewport({ scale: 1.0 });
-                this.pageDimensions[pageNum] = {
-                    width: unscaledViewport.width,
-                    height: unscaledViewport.height
-                };
-
-                // Create canvas
-                const canvas = document.createElement('canvas');
-                canvas.className = 'pdf-page-canvas';
-                canvas.width = viewport.width;
-                canvas.height = viewport.height;
-                canvas.style.display = 'block';
-
-                const context = canvas.getContext('2d');
-                await page.render({
-                    canvasContext: context,
-                    viewport: viewport
-                }).promise;
-
-                canvasWrapper.appendChild(canvas);
-                this.pageCanvases[pageNum - 1] = canvas; // Store by index
-
-                // Create redaction layer
-                const redactionLayer = document.createElement('div');
-                redactionLayer.className = 'page-redaction-layer';
-                redactionLayer.dataset.page = pageNum;
-                redactionLayer.style.cssText = `
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: ${canvas.width}px;
-                    height: ${canvas.height}px;
-                    pointer-events: none;
-                `;
-                canvasWrapper.appendChild(redactionLayer);
-
-                // Add mouse events
-                this.addPageMouseEvents(pageWrapper, pageNum, canvas, redactionLayer);
-            });
+            // Start observing
+            observer.observe(pageWrapper);
         }
 
-        // 3. Execute all renders in parallel (Performance fix)
-        // We catch errors to avoid one page crash stopping all
-        await Promise.all(renderTasks.map(task => task().catch(err => console.error(err))));
+        // Store observer to disconnect later if needed
+        this.pageObserver = observer;
 
         // Update current page indicator
         this.currentPage = 1;
         this.elements.currentPageEl.textContent = 1;
 
-        // Render any existing redactions
-        this.renderAllRedactions();
+        // Render any existing redactions (mapped to placeholders for now)
+        // They will be visually placed when page renders
+        this.updateUndoRedoUI();
+    },
+
+    /**
+     * Render a single page when it comes into view
+     */
+    async renderPage(pageNum, pageWrapper) {
+        // Prevent double render
+        if (pageWrapper.dataset.rendered === 'true') return;
+        pageWrapper.dataset.rendered = 'true';
+
+        try {
+            const page = await this.pdfDoc.getPage(pageNum);
+            const viewport = page.getViewport({ scale: this.scale });
+
+            // Store unscaled dimensions
+            const unscaledViewport = page.getViewport({ scale: 1.0 });
+            this.pageDimensions[pageNum] = {
+                width: unscaledViewport.width,
+                height: unscaledViewport.height
+            };
+
+            const canvasWrapper = pageWrapper.querySelector('.canvas-wrapper');
+
+            // Set precise height now that we have it
+            canvasWrapper.style.height = `${viewport.height}px`;
+            canvasWrapper.style.width = `${viewport.width}px`;
+
+            // Create canvas
+            const canvas = document.createElement('canvas');
+            canvas.className = 'pdf-page-canvas';
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            canvas.style.display = 'block';
+
+            const context = canvas.getContext('2d');
+            await page.render({
+                canvasContext: context,
+                viewport: viewport
+            }).promise;
+
+            canvasWrapper.appendChild(canvas);
+            this.pageCanvases[pageNum - 1] = canvas; // Store by index
+
+            // Create redaction layer
+            const redactionLayer = document.createElement('div');
+            redactionLayer.className = 'page-redaction-layer';
+            redactionLayer.dataset.page = pageNum;
+            redactionLayer.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: ${canvas.width}px;
+                height: ${canvas.height}px;
+                pointer-events: none;
+            `;
+            canvasWrapper.appendChild(redactionLayer);
+
+            // Add mouse events
+            this.addPageMouseEvents(pageWrapper, pageNum, canvas, redactionLayer);
+
+            // Re-render redactions for this page specifically
+            this.renderPageRedactions(pageNum);
+
+        } catch (err) {
+            console.error(`Error rendering page ${pageNum}:`, err);
+            pageWrapper.dataset.rendered = 'false'; // Retry later?
+        }
         this.updateUndoRedoUI();
     },
 
@@ -1233,198 +1272,197 @@ const App = {
     /**
      * Render redactions on ALL pages
      */
+    /**
+     * Render redactions on ALL *rendered* pages
+     */
     renderAllRedactions() {
-        // Clear all redaction layers first
-        document.querySelectorAll('.page-redaction-layer').forEach(layer => {
-            layer.innerHTML = '';
-        });
-
+        // Iterate through all pages, but only render on those that are visible/rendered
         for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
-            const redactions = Redactor.getPageRedactions(pageNum);
-            const redactionLayer = document.querySelector(`.page-redaction-layer[data-page="${pageNum}"]`);
-
-            if (!redactionLayer) continue;
-
-            for (const redaction of redactions) {
-                const box = document.createElement('div');
-                box.className = 'redaction-box';
-                box.dataset.id = redaction.id;
-                box.style.pointerEvents = 'auto';
-
-                // Use actual page height if available, otherwise fallback to A4
-                const dims = this.pageDimensions[pageNum];
-                const pageHeight = dims ? dims.height : 842;
-
-                const canvasBounds = Redactor.pdfToCanvasCoords(
-                    redaction.bounds,
-                    pageHeight,
-                    this.scale
-                );
-
-                box.style.left = canvasBounds.x + 'px';
-                box.style.top = canvasBounds.y + 'px';
-                box.style.width = canvasBounds.width + 'px';
-                box.style.width = canvasBounds.width + 'px';
-                box.style.height = canvasBounds.height + 'px';
-
-                // VISUAL SIGNAL WORDS - Color coded by confidence
-                if (redaction.type === 'indicator') {
-                    // Confidence-based color coding:
-                    // - high: green (highly likely to be PII)
-                    // - medium: gold/yellow (probable PII)
-                    // - low: orange (possible, needs review)
-                    // - learned: blue (user-taught pattern)
-                    const confidence = redaction.confidence || 'medium';
-
-                    let bgColor, borderColor, confidenceLabel;
-                    switch (confidence) {
-                        case 'high':
-                            bgColor = 'rgba(34, 197, 94, 0.3)';  // Green
-                            borderColor = '#22c55e';
-                            confidenceLabel = '✓ Hoog';
-                            break;
-                        case 'learned':
-                            bgColor = 'rgba(59, 130, 246, 0.3)'; // Blue
-                            borderColor = '#3b82f6';
-                            confidenceLabel = '📚 Geleerd';
-                            break;
-                        case 'low':
-                            bgColor = 'rgba(249, 115, 22, 0.3)'; // Orange
-                            borderColor = '#f97316';
-                            confidenceLabel = '? Laag';
-                            break;
-                        default: // medium
-                            bgColor = 'rgba(255, 215, 0, 0.3)';  // Gold
-                            borderColor = '#fbc02d';
-                            confidenceLabel = '○ Medium';
-                    }
-
-                    box.style.backgroundColor = bgColor;
-                    box.style.border = `2px dashed ${borderColor}`;
-                    box.title = `${confidenceLabel} zekerheid: "${redaction.value}" - Klik om zwart te lakken`;
-                    box.dataset.confidence = confidence;
-
-                    // Click to convert to real redaction (no confirmation for speed)
-                    box.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-
-                        // Skip if we were dragging
-                        if (this.isDragging) {
-                            console.log('Skipping click - was dragging');
-                            return;
-                        }
-
-                        console.log('Converting indicator to redaction:', redaction.value);
-
-                        // Convert to manual redaction
-                        redaction.type = 'manual';
-
-                        // Save state in Redactor for undo/redo
-                        Redactor.saveState();
-
-                        // Show feedback
-                        this.showToast(`"${redaction.value}" zwartgelakt`);
-
-                        // Re-render to show the black box
-                        this.renderAllRedactions();
-                        this.updateRedactionsList();
-                    });
-                }
-
-                // Delete button - Now for BOTH standard and indicators
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'redaction-delete-btn';
-                deleteBtn.innerHTML = '✕';
-                deleteBtn.title = 'Verwijder redactie';
-                // Adjust color for indicators if needed
-                if (redaction.type === 'indicator') {
-                    deleteBtn.style.background = 'rgba(0,0,0,0.1)';
-                    deleteBtn.style.color = '#333';
-                }
-
-                // Use mousedown to prevent drag-start from interfering
-                deleteBtn.addEventListener('mousedown', async (e) => {
-                    e.stopPropagation(); // Crucial
-                    e.preventDefault();  // Prevent focus theft
-                    console.log('Delete button clicked for:', redaction);
-
-                    try {
-                        const allRedactions = Redactor.getAllRedactions();
-                        const instances = allRedactions.filter(r => r.value === redaction.value && redaction.value);
-
-                        // FIX: For manual redactions, default to single delete to avoid accidents
-                        // Only prompt for global delete if it's a learned/detected pattern OR if user explicitly asks (future feat)
-
-                        if (redaction.type !== 'manual' && instances.length > 1) {
-                            const confirmGlobal = confirm(`Dit woord komt ${instances.length} keer voor. Wil je deze OVERAL verwijderen?\n\nOK = Overal\nAnnuleren = Alleen dit exemplaar`);
-                            if (confirmGlobal) {
-                                if (typeof Detector !== 'undefined' && Detector.ignoreWord) {
-                                    Detector.ignoreWord(redaction.value);
-                                }
-                                this.removeRedactionGlobally(redaction.value);
-                            } else {
-                                Redactor.removeRedaction(redaction.id);
-                            }
-                        } else {
-                            // Manual redaction OR single instance -> Always single delete
-                            Redactor.removeRedaction(redaction.id);
-                        }
-                    } catch (err) {
-                        console.error('Delete failed:', err);
-                        alert('Fout bij verwijderen: ' + err.message);
-                    }
-
-                    // Force re-render
-                    await this.renderAllRedactions();
-                    this.updateRedactionsList();
-                });
-                box.appendChild(deleteBtn);
-
-                // SHARED INTERACTION (Move & Resize) - Applies to ALL types including indicators
-
-                // Resize handles
-                const handles = ['nw', 'ne', 'sw', 'se'];
-                handles.forEach(pos => {
-                    const handle = document.createElement('div');
-                    handle.className = `redaction-resize-handle ${pos}`;
-                    handle.addEventListener('mousedown', (e) => {
-                        e.stopPropagation();
-                        this.startResizing(e, redaction, pos, pageNum);
-                    });
-                    box.appendChild(handle);
-                });
-
-                // Move functionality
-                box.classList.add('movable');
-                box.addEventListener('mousedown', (e) => {
-                    if (e.target === box) {
-                        e.stopPropagation();
-                        this.startMoving(e, redaction, pageNum);
-                    }
-                });
-
-                // Bidirectional Highlighting
-                box.addEventListener('click', (e) => {
-                    if (e.target === box || e.target.classList.contains('redaction-resize-handle')) {
-                        e.stopPropagation();
-
-                        // 1. Remove highlight from all items
-                        document.querySelectorAll('.redaction-item').forEach(el => el.classList.remove('selected'));
-
-                        // 2. Find and highlight sidebar item
-                        const sidebarItem = document.querySelector(`.redaction-item[data-id="${redaction.id}"]`);
-                        if (sidebarItem) {
-                            sidebarItem.classList.add('selected');
-                            sidebarItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
-                    }
-                });
-
-                redactionLayer.appendChild(box);
+            const pageWrapper = document.getElementById(`page-wrapper-${pageNum}`);
+            if (pageWrapper && pageWrapper.dataset.rendered === 'true') {
+                this.renderPageRedactions(pageNum);
             }
         }
         this.updateUndoRedoUI();
+    },
+
+    /**
+     * Render redactions for a specific page
+     */
+    renderPageRedactions(pageNum) {
+        const redactionLayer = document.querySelector(`.page-redaction-layer[data-page="${pageNum}"]`);
+        if (!redactionLayer) return;
+
+        // Clear existing
+        redactionLayer.innerHTML = '';
+
+        const redactions = Redactor.getPageRedactions(pageNum);
+
+        for (const redaction of redactions) {
+            const box = document.createElement('div');
+            box.className = 'redaction-box';
+            box.dataset.id = redaction.id;
+            box.style.pointerEvents = 'auto';
+
+            // Use actual page height if available, otherwise fallback to A4
+            const dims = this.pageDimensions[pageNum];
+            const pageHeight = dims ? dims.height : 842;
+
+            const canvasBounds = Redactor.pdfToCanvasCoords(
+                redaction.bounds,
+                pageHeight,
+                this.scale
+            );
+
+            box.style.left = canvasBounds.x + 'px';
+            box.style.top = canvasBounds.y + 'px';
+            box.style.width = canvasBounds.width + 'px';
+            box.style.height = canvasBounds.height + 'px';
+
+            // VISUAL SIGNAL WORDS - Color coded by confidence
+            if (redaction.type === 'indicator') {
+                // Confidence-based color coding:
+                // - high: green (highly likely to be PII)
+                // - medium: gold/yellow (probable PII)
+                // - low: orange (possible, needs review)
+                // - learned: blue (user-taught pattern)
+                const confidence = redaction.confidence || 'medium';
+
+                let bgColor, borderColor, confidenceLabel;
+                switch (confidence) {
+                    case 'high':
+                        bgColor = 'rgba(34, 197, 94, 0.3)';  // Green
+                        borderColor = '#22c55e';
+                        confidenceLabel = '✓ Hoog';
+                        break;
+                    case 'learned':
+                        bgColor = 'rgba(59, 130, 246, 0.3)'; // Blue
+                        borderColor = '#3b82f6';
+                        confidenceLabel = '📚 Geleerd';
+                        break;
+                    case 'low':
+                        bgColor = 'rgba(249, 115, 22, 0.3)'; // Orange
+                        borderColor = '#f97316';
+                        confidenceLabel = '? Laag';
+                        break;
+                    default: // medium
+                        bgColor = 'rgba(255, 215, 0, 0.3)';  // Gold
+                        borderColor = '#fbc02d';
+                        confidenceLabel = '○ Medium';
+                }
+
+                box.style.backgroundColor = bgColor;
+                box.style.border = `2px dashed ${borderColor}`;
+                box.title = `${confidenceLabel} zekerheid: "${redaction.value}" - Klik om zwart te lakken`;
+                box.dataset.confidence = confidence;
+
+                // Click to convert to real redaction (no confirmation for speed)
+                box.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+
+                    // Skip if we were dragging
+                    if (this.isDragging) {
+                        return;
+                    }
+
+                    // Convert to manual redaction
+                    redaction.type = 'manual';
+
+                    // Save state in Redactor for undo/redo
+                    Redactor.saveState();
+
+                    // Show feedback
+                    this.showToast(`"${redaction.value}" zwartgelakt`);
+
+                    // Re-render to show the black box
+                    this.renderAllRedactions();
+                    this.updateRedactionsList();
+                });
+            }
+
+            // Delete button - Now for BOTH standard and indicators
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'redaction-delete-btn';
+            deleteBtn.innerHTML = '✕';
+            deleteBtn.title = 'Verwijder redactie';
+            // Adjust color for indicators if needed
+            if (redaction.type === 'indicator') {
+                deleteBtn.style.background = 'rgba(0,0,0,0.1)';
+                deleteBtn.style.color = '#333';
+            }
+
+            // Use mousedown to prevent drag-start from interfering
+            deleteBtn.addEventListener('mousedown', async (e) => {
+                e.stopPropagation(); // Crucial
+                e.preventDefault();  // Prevent focus theft
+
+                try {
+                    const allRedactions = Redactor.getAllRedactions();
+                    const instances = allRedactions.filter(r => r.value === redaction.value && redaction.value);
+
+                    if (redaction.type !== 'manual' && instances.length > 1) {
+                        const confirmGlobal = confirm(`Dit woord komt ${instances.length} keer voor. Wil je deze OVERAL verwijderen?\n\nOK = Overal\nAnnuleren = Alleen dit exemplaar`);
+                        if (confirmGlobal) {
+                            instances.forEach(r => Redactor.removeRedaction(r.id));
+                            this.showToast(`${instances.length} items verwijderd`);
+                        } else {
+                            Redactor.removeRedaction(redaction.id);
+                        }
+                    } else {
+                        Redactor.removeRedaction(redaction.id);
+                    }
+
+                    this.renderAllRedactions();
+                    this.updateRedactionsList();
+                } catch (err) {
+                    console.error('Delete error:', err);
+                }
+            });
+            box.appendChild(deleteBtn);
+
+            // SHARED INTERACTION (Move & Resize) - Applies to ALL types including indicators
+
+            // Resize handles
+            const handles = ['nw', 'ne', 'sw', 'se'];
+            handles.forEach(pos => {
+                const handle = document.createElement('div');
+                handle.className = `redaction-resize-handle ${pos}`;
+                handle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    this.startResizing(e, redaction, pos, pageNum);
+                });
+                box.appendChild(handle);
+            });
+
+            // Move functionality
+            box.classList.add('movable');
+            box.addEventListener('mousedown', (e) => {
+                if (e.target === box) {
+                    e.stopPropagation();
+                    this.startMoving(e, redaction, pageNum);
+                }
+            });
+
+            // Bidirectional Highlighting
+            box.addEventListener('click', (e) => {
+                if (e.target === box || e.target.classList.contains('redaction-resize-handle')) {
+                    e.stopPropagation();
+
+                    // 1. Remove highlight from all items
+                    document.querySelectorAll('.redaction-item').forEach(el => el.classList.remove('selected'));
+
+                    // 2. Find and highlight sidebar item
+                    const sidebarItem = document.querySelector(`.redaction-item[data-id="${redaction.id}"]`);
+                    if (sidebarItem) {
+                        sidebarItem.classList.add('selected');
+                        sidebarItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }
+            });
+
+            redactionLayer.appendChild(box);
+        }
     },
 
     /**
@@ -2222,9 +2260,16 @@ const App = {
      */
     async findTextBoundsOnPage(pageNum, textToFind) {
         try {
-            const page = await this.pdfDoc.getPage(pageNum);
-            const textContent = await page.getTextContent();
-            const textItems = textContent.items;
+            let textItems;
+
+            // Optimization: Use cached text items if available from runDetection
+            if (this.textItemsPerPage && this.textItemsPerPage.has(pageNum)) {
+                textItems = this.textItemsPerPage.get(pageNum);
+            } else {
+                const page = await this.pdfDoc.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                textItems = textContent.items;
+            }
 
             const cleanSearch = textToFind.trim().toLowerCase().replace(/\s+/g, '');
             if (!cleanSearch) return null;
@@ -2479,7 +2524,15 @@ const App = {
             return;
         }
 
+        const CHUNK_SIZE = 5; // Process 5 pages at a time to keep UI responsive
+
         for (let i = 1; i <= this.totalPages; i++) {
+            // Yield to UI thread every few pages
+            if (i % CHUNK_SIZE === 0) {
+                this.showToast(`Scannen pagina ${i} van ${this.totalPages}...`);
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+
             const page = await this.pdfDoc.getPage(i);
             const textContent = await page.getTextContent();
             const viewport = page.getViewport({ scale: 1 });
@@ -2557,7 +2610,6 @@ const App = {
                     }
 
                     // Group AI items into categories
-                    // pageDetections.byCategory needs update
                     const categories = {};
                     pageDetections.all.forEach(det => {
                         const catKey = det.type;
